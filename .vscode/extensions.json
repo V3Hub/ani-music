@@ -1,0 +1,14 @@
+{
+  "recommendations": [
+    // ESLint —— 格式化 + 代码检查
+    "dbaeumer.vscode-eslint",
+    // Vue 官方语言支持（Vue 3 + TS）
+    "vue.volar",
+    // UnoCSS IntelliSense（如果后续加 UnoCSS）
+    "antfu.uno",
+    // EditorConfig 支持
+    "editorconfig.editorconfig",
+    // .npmrc / pnpm-workspace.yaml 语法高亮
+    "pgourlain.erlang"
+  ]
+}

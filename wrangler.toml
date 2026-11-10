@@ -1,0 +1,5 @@
+name = "ain-music"
+compatibility_date = "2025-01-01"
+
+# Cloudflare Pages 项目名（首次 deploy 会自动创建）
+# pages_build_output_dir = "dist"

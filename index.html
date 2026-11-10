@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- ===== 移动端强适配 ===== -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="format-detection" content="telephone=no" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Ain Music" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="theme-color" content="#000000" />
+    <meta name="application-name" content="Ain Music" />
+
+    <!-- ===== SEO 基础 ===== -->
+    <title>Ain Music - 你的专属音乐播放器</title>
+    <meta
+      name="description"
+      content="Ain Music 是一款基于 Vue 3 + Vant 的轻量级音乐播放器，支持在线搜索、歌单管理、歌词滚动、主题色动态切换。"
+    />
+    <meta name="keywords" content="音乐播放器,Vue3,Vant,在线音乐,歌词,歌单,Ain Music" />
+    <meta name="author" content="Ain Music Team" />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Ain Music - 你的专属音乐播放器" />
+    <meta property="og:description" content="轻量级在线音乐播放器，支持歌词滚动、主题色联动、歌单管理。" />
+    <meta property="og:site_name" content="Ain Music" />
+
+    <!-- 微信 / 分享卡 -->
+    <meta itemprop="name" content="Ain Music" />
+    <meta itemprop="description" content="轻量级在线音乐播放器" />
+
+    <!-- favicon：原始图形 + 简单纯色背景 -->
+    <link rel="icon" type="image/svg+xml" href="/qs.svg" />
+    <link rel="apple-touch-icon" href="/qs.svg" />
+
+    <style>
+      * {
+        box-sizing: border-box;
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      :root {
+        /* 全局主题变量（默认值，运行时由封面主题色覆盖） */
+        --theme-primary: #000000;
+        --theme-rgb: 0, 0, 0;
+        --theme-text: #ffffff;
+        /*  vant 主色跟随主题色 */
+        --van-primary-color: var(--theme-primary);
+        --van-background: #f7f8fa;
+        --theme-background: #0a0b16;
+        /* 安全区兜底纯色：与渐变深色端一致，避免出现色带 */
+      }
+      /* ===== 关键：html/body 必须深色覆盖，否则 splash 未触及的安全区露白 ===== */
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        /* 用 background-color 而非简写，主题色变化时才能走过渡动画 */
+        background-color: var(--theme-background);
+        transition: background-color 0.65s cubic-bezier(0.4, 0, 0.2, 1);
+        overflow: hidden;
+        overscroll-behavior: none;
+      }
+
+      /* ===== 开屏动画（纯内联，不依赖任何 JS 库） ===== */
+      #splash {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 32px;
+        background: radial-gradient(ellipse at center, #2a1f3d 0%, #16182a 60%, #0a0b16 100%);
+        opacity: 1;
+        transition: opacity 0.45s ease;
+      }
+
+      #splash.fade-out {
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      /* Logo 容器 + 旋转光环 */
+      .splash-logo-wrap {
+        position: relative;
+        width: 120px;
+        height: 120px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      /* 旋转光环（两层错开方向） */
+      .splash-ring {
+        position: absolute;
+        inset: -6px;
+        border-radius: 50%;
+        border: 2px solid transparent;
+        border-top-color: #e94560;
+        border-right-color: #e94560;
+        animation: splash-rotate 3s linear infinite;
+        opacity: 0.6;
+      }
+
+      .splash-ring.reverse {
+        inset: 6px;
+        border-top-color: transparent;
+        border-right-color: transparent;
+        border-bottom-color: #ff6b9d;
+        border-left-color: #ff6b9d;
+        animation: splash-rotate 4s linear infinite reverse;
+        opacity: 0.4;
+      }
+
+      .splash-logo {
+        position: relative;
+        width: 96px;
+        height: 96px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        filter: drop-shadow(0 8px 24px rgba(233, 69, 96, 0.45)) drop-shadow(0 0 40px rgba(233, 69, 96, 0.25));
+        animation: splash-pulse 2s ease-in-out infinite;
+        z-index: 1;
+      }
+
+      .splash-logo svg {
+        width: 96px;
+        height: 96px;
+      }
+
+      .splash-title {
+        color: #fff;
+        font-size: 26px;
+        font-weight: 700;
+        letter-spacing: 6px;
+        opacity: 0;
+        animation: splash-fade-up 0.7s ease 0.15s forwards;
+        text-shadow: 0 2px 20px rgba(255, 255, 255, 0.15);
+      }
+
+      .splash-subtitle {
+        color: rgba(255, 255, 255, 0.45);
+        font-size: 11px;
+        letter-spacing: 4px;
+        opacity: 0;
+        animation: splash-fade-up 0.7s ease 0.35s forwards;
+        text-transform: uppercase;
+      }
+
+      .splash-bars {
+        display: flex;
+        align-items: flex-end;
+        gap: 5px;
+        height: 24px;
+        opacity: 0;
+        animation: splash-fade-up 0.7s ease 0.55s forwards;
+      }
+
+      .splash-bars span {
+        width: 4px;
+        height: 100%;
+        background: linear-gradient(to top, #e94560, #ff6b9d);
+        border-radius: 2px;
+        animation: splash-bar 1.1s ease-in-out infinite;
+      }
+
+      .splash-bars span:nth-child(1) {
+        animation-delay: 0s;
+      }
+      .splash-bars span:nth-child(2) {
+        animation-delay: 0.13s;
+      }
+      .splash-bars span:nth-child(3) {
+        animation-delay: 0.26s;
+      }
+      .splash-bars span:nth-child(4) {
+        animation-delay: 0.39s;
+      }
+
+      @keyframes splash-pulse {
+        0%,
+        100% {
+          transform: scale(1);
+          filter: drop-shadow(0 8px 24px rgba(233, 69, 96, 0.45)) drop-shadow(0 0 40px rgba(233, 69, 96, 0.25));
+        }
+        50% {
+          transform: scale(1.04);
+          filter: drop-shadow(0 12px 32px rgba(233, 69, 96, 0.6)) drop-shadow(0 0 60px rgba(233, 69, 96, 0.45));
+        }
+      }
+
+      @keyframes splash-rotate {
+        from {
+          transform: rotate(0deg);
+        }
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      @keyframes splash-bar {
+        0%,
+        100% {
+          transform: scaleY(0.25);
+        }
+        50% {
+          transform: scaleY(1);
+        }
+      }
+
+      @keyframes splash-fade-up {
+        from {
+          opacity: 0;
+          transform: translateY(14px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="splash">
+      <div class="splash-logo-wrap">
+        <div class="splash-ring"></div>
+        <div class="splash-ring reverse"></div>
+        <div class="splash-logo">
+          <!-- 原始图形（开屏页本身是深色底，无需额外背景） -->
+          <svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+            <path
+              d="M505.7 537.3c-152.2 0-285.9 78.95-362.65 198.1 75.98 122.7 211.8 204.5 366.75 204.5 152.2 0 285.9-78.95 362.65-198.1-75.98-122.8-211.75-204.5-366.75-204.5z"
+              fill="#e94560"
+            />
+            <path
+              d="M795.03 185.55L718.54 392.8c-40.86-73.22-119.04-122.8-208.69-122.8-131.69 0-238.85 107.16-238.85 238.85s107.16 238.85 238.85 238.85c111.46 0 205.26-76.75 231.53-180.12L857.3 253.6a436.33 436.33 0 0 0-62.26-68.04zm-285.18 480.15c-86.53 0-156.93-70.4-156.93-156.93s70.4-156.93 156.93-156.93 156.93 70.4 156.93 156.93-70.4 156.93-156.93 156.93z"
+              fill="#FFFFFF"
+            />
+          </svg>
+        </div>
+      </div>
+      <div class="splash-title">AIN MUSIC</div>
+      <div class="splash-subtitle">Music · Always With You</div>
+      <div class="splash-bars">
+        <span></span>
+        <span></span>
+        <span></span>
+        <span></span>
+      </div>
+    </div>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
