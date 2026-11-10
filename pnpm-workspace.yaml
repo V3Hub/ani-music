@@ -1,0 +1,17 @@
+# ===== pnpm workspace（结构化配置放这里） =====
+# 文档：https://pnpm.io/pnpm-workspace_yaml
+
+# 单包项目，不做多包
+packages: []
+
+# 允许这些依赖执行 postinstall 构建脚本（pnpm 12 默认拦截）
+# 说明：onlyBuiltDependencies 已被弃用，统一用 allowBuilds
+allowBuilds:
+  '@parcel/watcher': true
+  esbuild: true
+  sharp: true
+  vue-demi: true
+  workerd: true
+
+# pnpm 12 供应链安全基线（.npmrc 的 trust-policy=off 会覆盖此项）
+minimumReleaseAgeExcludePrune: true

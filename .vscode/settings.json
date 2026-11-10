@@ -1,0 +1,43 @@
+{
+  "eslint.runtime": "node",
+  // 要让它接管 html/scss/css/md，必须把这些加进来
+  "eslint.validate": [
+    "javascript",
+    "javascriptreact",
+    "typescript",
+    "typescriptreact",
+    "vue",
+    "json",
+    "jsonc",
+    "yaml",
+    "html",
+    "scss",
+    "css",
+    "markdown"
+  ],
+
+  "eslint.format.enable": true,
+  "prettier.enable": false,
+  "editor.formatOnSave": true,
+  "editor.formatOnPaste": false,
+  "editor.defaultFormatter": "dbaeumer.vscode-eslint",
+
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": "always",
+    "source.organizeImports": "never"
+  },
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "search.exclude": {
+    "node_modules": true,
+    "dist": true,
+    "**/*.tsbuildinfo": true,
+    "pnpm-lock.yaml": true
+  },
+  "files.exclude": {
+    "**/.git": true,
+    "**/node_modules": true,
+    "**/dist": true
+  },
+  "files.encoding": "utf8",
+  "files.eol": "\n"
+}
