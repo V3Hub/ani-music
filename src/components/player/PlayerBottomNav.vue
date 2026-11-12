@@ -9,7 +9,7 @@
     >
       <template v-if="item.key === 'music'">
         <div class="play-trigger" :class="{ 'is-disabled': !canPlay }">
-          <van-icon :name="isPlaying ? 'pause' : 'play'" size="18" color="#FFFFFF" />
+          <van-icon :name="isPlaying ? 'pause' : 'play'" size="18" />
         </div>
       </template>
       <template v-else>
@@ -66,12 +66,16 @@ function onItemClick(tab: string) {
 
     .nav-label {
       font-size: 15px;
-      color: rgba(255, 255, 255, 0.6);
-      transition: color 0.2s;
+      color: var(--theme-text, #fff);
+      opacity: 0.6;
+      transition:
+        color 0.2s,
+        opacity 0.2s;
     }
 
     &.is-active .nav-label {
-      color: #fff;
+      color: var(--theme-text, #fff);
+      opacity: 1;
       font-weight: 600;
     }
 
@@ -86,9 +90,10 @@ function onItemClick(tab: string) {
       justify-content: center;
       width: 50px;
       height: 50px;
-      border: 2px solid rgba(255, 255, 255, 0.9);
+      border: 2px solid var(--theme-text, #fff);
       border-radius: 50%;
-      background: rgba(255, 255, 255, 0.08);
+      background: rgba(128, 128, 128, 0.16);
+      color: var(--theme-text, #fff);
       box-sizing: border-box;
 
       &.is-disabled {

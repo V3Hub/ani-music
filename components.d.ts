@@ -7,6 +7,8 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AddToPlaylistSheet: typeof import('./src/components/playlist/AddToPlaylistSheet.vue')['default']
+    CreatePlaylistPopup: typeof import('./src/components/playlist/CreatePlaylistPopup.vue')['default']
     DiscoverPanel: typeof import('./src/components/discover/DiscoverPanel.vue')['default']
     ListeningModeSidebar: typeof import('./src/components/player/ListeningModeSidebar.vue')['default']
     OwnerPanel: typeof import('./src/components/owner/OwnerPanel.vue')['default']
@@ -15,9 +17,11 @@ declare module 'vue' {
     PlayerSettingsPopup: typeof import('./src/components/player/PlayerSettingsPopup.vue')['default']
     PlayerStage: typeof import('./src/components/player/PlayerStage.vue')['default']
     PlayerToolbar: typeof import('./src/components/player/PlayerToolbar.vue')['default']
+    PlaylistActionSheet: typeof import('./src/components/playlist/PlaylistActionSheet.vue')['default']
     PlaylistCard: typeof import('./src/components/playlist/PlaylistCard.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
+    SongActionSheet: typeof import('./src/components/playlist/SongActionSheet.vue')['default']
     SongListDrawer: typeof import('./src/components/playlist/SongListDrawer.vue')['default']
     SongSearchPopup: typeof import('./src/components/player/SongSearchPopup.vue')['default']
     VanButton: typeof import('vant/es')['Button']

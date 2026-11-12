@@ -37,7 +37,7 @@
         @open-favorite="onOpenFavorite"
         @open-history="onOpenHistory"
         @open-playlist="onOpenPlaylist"
-        @create-playlist="createPlaylist"
+        @create-playlist="createVisible = true"
         @open-settings="openSettings"
       />
 
@@ -47,6 +47,7 @@
         :active-playlist="activePlaylist"
         :is-playing="player.isPlaying"
         @open="onOpenDiscover"
+        @search="searchVisible = true"
       />
       <div class="bottom-bar">
         <PlayerBottomNav
@@ -76,15 +77,13 @@
 
     <SongListDrawer
       ref="drawerRef"
-      :playlists="playlists"
       :active-playlist="activePlaylist"
       :active-songs="activeSongs"
-      :favorite-songs="favoriteSongs"
-      @delete="removeSongFromActive"
-      @add-to-playlist="addSongToPlaylist"
+      :is-owner="activePlaylistIsOwner"
+      @more="onOpenSongActions"
       @delete-playlist="deletePlaylist"
       @add-sub-playlist="savePlaylist"
-      @favorite="onFavorite"
+      @remove-sub-playlist="removeSavedPlaylist"
     />
 
     <PlayerSettingsPopup
@@ -94,16 +93,38 @@
       :picker-columns="pickerColumns"
       @confirm-source="confirmSource"
     />
+
+    <CreatePlaylistPopup v-model:visible="createVisible" :submitting="creatingPlaylist" @submit="onCreatePlaylist" />
+
+    <SongActionSheet
+      v-model:visible="songActionVisible"
+      :song="actionSong"
+      :is-favorite="actionSong ? isFavoriteSong(actionSong) : false"
+      :can-delete="canDeleteActionSong"
+      @favorite="onActionFavorite"
+      @add-to-playlist="addToPlaylistVisible = true"
+      @delete="onActionDelete"
+    />
+
+    <AddToPlaylistSheet
+      v-model:visible="addToPlaylistVisible"
+      :playlists="playlists"
+      :favorite-count="favoriteSongs.length"
+      :favorite-cover="favoriteSongs[0]?.pic"
+      @select="onSelectPlaylistTarget"
+      @create="onCreatePlaylistFromSheet"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import type { PlaylistItem, Song } from '@/types/music'
 import { addSongToFavorite, fetchSongs, getFavoriteList, removeSongFromFavorite } from '@/api/music'
+import { PlaylistSource } from '@/constants/playlist'
 import { showToast } from 'vant'
 import { useListeningMode } from '@/composables/player/useListeningMode'
 import { usePlaybackControl } from '@/composables/player/usePlaybackControl'
-import { usePlaylistDiscovery } from '@/composables/player/usePlaylistDiscovery'
+import { usePlaylistDiscovery, toUserToken } from '@/composables/player/usePlaylistDiscovery'
 import { usePlaylistLibrary } from '@/composables/player/usePlaylistLibrary'
 import { usePlayQueue } from '@/composables/player/usePlayQueue'
 import { usePlayerNavigation } from '@/composables/player/usePlayerNavigation'
@@ -119,6 +140,9 @@ import PlayerStage from '@/components/player/PlayerStage.vue'
 import PlayerToolbar from '@/components/player/PlayerToolbar.vue'
 import SongSearchPopup from '@/components/player/SongSearchPopup.vue'
 import SongListDrawer from '@/components/playlist/SongListDrawer.vue'
+import CreatePlaylistPopup from '@/components/playlist/CreatePlaylistPopup.vue'
+import SongActionSheet from '@/components/playlist/SongActionSheet.vue'
+import AddToPlaylistSheet from '@/components/playlist/AddToPlaylistSheet.vue'
 import OwnerPanel from '@/components/owner/OwnerPanel.vue'
 
 const player = usePlayerStore()
@@ -126,6 +150,11 @@ const player = usePlayerStore()
 const drawerRef = ref<InstanceType<typeof SongListDrawer>>()
 const searchVisible = ref(false)
 const queueVisible = ref(false)
+const createVisible = ref(false)
+const creatingPlaylist = ref(false)
+const songActionVisible = ref(false)
+const addToPlaylistVisible = ref(false)
+const actionSong = ref<Song | null>(null)
 
 const keyword = ref('')
 
@@ -161,6 +190,7 @@ const {
   createPlaylist,
   deletePlaylist,
   savePlaylist,
+  removeSavedPlaylist,
 } = usePlaylistLibrary({ favoriteSongs })
 
 const { discoverPlaylists, fetchDiscoverPlaylists, buildDiscoverContext } = usePlaylistDiscovery()
@@ -199,14 +229,122 @@ function onOpenHistory() {
   drawerRef.value?.open()
 }
 
-async function onOpenPlaylist(id: number) {
-  await openUserPlaylist(id)
+function onOpenPlaylist(id: number) {
+  // 先打开详情页，再异步拉取歌曲，避免等待接口造成点击无响应
   drawerRef.value?.open()
+  void openUserPlaylist(id)
+}
+
+/** 创建歌单（标题 + 描述），成功后关闭弹窗；请求中禁止重复提交 */
+async function onCreatePlaylist(payload: { name: string, desc: string }) {
+  if (creatingPlaylist.value)
+    return
+  creatingPlaylist.value = true
+  try {
+    const ok = await createPlaylist(payload.name, payload.desc)
+    if (ok)
+      createVisible.value = false
+  } finally {
+    creatingPlaylist.value = false
+  }
+}
+
+// ========== 歌曲操作面板 ==========
+/** 当前歌单是否属于自己（用于判断显示删除还是收藏） */
+const activePlaylistIsOwner = computed(() => {
+  const ctx = activePlaylist.value
+  if (!ctx)
+    return false
+  // 以作者标识为准：收藏的歌单作者是源作者，不能当作本人歌单删除
+  if (ctx.userToken)
+    return ctx.userToken === userToken.value
+  if (typeof ctx.owner === 'boolean')
+    return ctx.owner
+  return false
+})
+
+/** 当前上下文是否允许删除歌曲 */
+const canDeleteActionSong = computed(() => {
+  const ctx = activePlaylist.value
+  if (!ctx)
+    return false
+  return ctx.source === PlaylistSource.favorite
+    || ctx.source === PlaylistSource.playRecord
+    || ctx.userToken === userToken.value
+})
+
+function onOpenSongActions(song: Song) {
+  actionSong.value = song
+  songActionVisible.value = true
+}
+
+/** 喜欢 / 取消喜欢当前操作歌曲 */
+async function onActionFavorite() {
+  const song = actionSong.value
+  if (!song)
+    return
+  const next = !isFavoriteSong(song)
+  const ok = next ? await addSongToFavorite(song.id) : await removeSongFromFavorite(song.id)
+  if (!ok) {
+    showToast(next ? '收藏失败' : '取消收藏失败')
+    return
+  }
+  song.favorite = next
+  favoriteSongs.value = next
+    ? [song, ...favoriteSongs.value.filter(item => item.id !== song.id)]
+    : favoriteSongs.value.filter(item => item.id !== song.id)
+  showToast(next ? '已收藏' : '已取消收藏')
+}
+
+/** 从当前歌单移除操作歌曲 */
+function onActionDelete() {
+  const song = actionSong.value
+  if (song)
+    removeSongFromActive(song.id)
+  songActionVisible.value = false
+}
+
+/** 选择目标歌单 */
+async function onSelectPlaylistTarget(target: number | 'favorite') {
+  const song = actionSong.value
+  if (!song)
+    return
+
+  if (target === 'favorite') {
+    if (isFavoriteSong(song)) {
+      showToast('已在喜欢的歌单中')
+    } else {
+      const ok = await addSongToFavorite(song.id)
+      if (ok) {
+        song.favorite = true
+        favoriteSongs.value = [song, ...favoriteSongs.value.filter(item => item.id !== song.id)]
+        showToast('已添加到喜欢的歌单')
+      } else {
+        showToast('添加失败')
+      }
+    }
+  } else {
+    await addSongToPlaylist(song.id, target)
+  }
+
+  addToPlaylistVisible.value = false
+  songActionVisible.value = false
+}
+
+/** 添加到歌单面板里点「创建歌单」 */
+function onCreatePlaylistFromSheet() {
+  addToPlaylistVisible.value = false
+  createVisible.value = true
 }
 
 async function onOpenDiscover(item: PlaylistItem) {
-  openContext(await buildDiscoverContext(item))
+  // 先用歌单基础信息占位打开，再异步补全歌曲
+  openContext({
+    playlist: { ...item, source: PlaylistSource.discover, userToken: toUserToken(item.user_id) },
+    songs: [],
+  })
   drawerRef.value?.open()
+  openContext(await buildDiscoverContext(item))
 }
 
 /** 判断歌曲是否已收藏：优先用播放时获取的状态，其次查本地收藏列表 */
