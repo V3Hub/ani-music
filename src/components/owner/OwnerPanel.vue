@@ -2,9 +2,7 @@
   <div class="owner-panel">
     <div class="owner-header">
       <div>10小时48分钟</div>
-      <van-button plain size="mini" @click="emit('openSettings')">
-        <van-icon name="setting-o" />
-      </van-button>
+      <van-icon class="settings-btn" name="setting-o" size="22" @click="emit('openSettings')" />
     </div>
     <div class="owner-content">
       <div class="user-info">
@@ -21,10 +19,10 @@
       </div>
       <div class="section-title">
         创建的歌单
-        <van-button size="mini" plain @click="emit('createPlaylist')">
-          <van-icon name="add-o" />
+        <div class="create-btn" @click="emit('createPlaylist')">
+          <van-icon name="plus" />
           创建
-        </van-button>
+        </div>
       </div>
       <ul class="playlist-list">
         <li @click="emit('openFavorite')">
@@ -32,7 +30,11 @@
             <div v-if="activePlaylist?.source === 'favorite' && isPlaying" class="wave-overlay">
               <div class="wave-box"><span /><span /><span /></div>
             </div>
-            <van-image width="64" height="64" round :src="favoriteSongs[0]?.pic ?? ''" />
+            <van-image width="72" height="72" radius="8" fit="cover" :src="coverOf(favoriteSongs[0]?.pic)">
+              <template #error>
+                <img class="cover-fallback" :src="LOGO_URL" alt="">
+              </template>
+            </van-image>
           </div>
           <div class="item-meta">
             <div>我喜欢的</div>
@@ -44,7 +46,11 @@
             <div v-if="activePlaylist?.source === 'playRecord' && isPlaying" class="wave-overlay">
               <div class="wave-box"><span /><span /><span /></div>
             </div>
-            <van-image width="64" height="64" round :src="playHistory[0]?.pic ?? ''" />
+            <van-image width="72" height="72" radius="8" fit="cover" :src="coverOf(playHistory[0]?.pic)">
+              <template #error>
+                <img class="cover-fallback" :src="LOGO_URL" alt="">
+              </template>
+            </van-image>
           </div>
           <div class="item-meta">
             <div>历史播放</div>
@@ -63,7 +69,11 @@
             >
               <div class="wave-box"><span /><span /><span /></div>
             </div>
-            <van-image width="64" height="64" round :src="item.pic ?? ''" />
+            <van-image width="72" height="72" radius="8" fit="cover" :src="coverOf(item.pic)">
+              <template #error>
+                <img class="cover-fallback" :src="LOGO_URL" alt="">
+              </template>
+            </van-image>
           </div>
           <div class="item-meta">
             <div>{{ item.name }}</div>
@@ -94,6 +104,13 @@ const emit = defineEmits<{
   (e: 'createPlaylist'): void
   (e: 'openSettings'): void
 }>()
+
+/** 项目 logo，歌单没有封面时兜底 */
+const LOGO_URL = '/qs.svg'
+
+function coverOf(pic?: string) {
+  return pic || LOGO_URL
+}
 </script>
 
 <style lang="scss" scoped>
@@ -102,12 +119,20 @@ const emit = defineEmits<{
   flex-direction: column;
   gap: 20px;
   padding: 10px 20px;
+  // 文字颜色跟随封面主题色计算出的前景色，自动适配深/浅背景
+  color: var(--theme-text, #fff);
 
   .owner-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 5px;
+
+    .settings-btn {
+      color: var(--theme-text, #fff);
+      cursor: pointer;
+      opacity: 0.9;
+    }
   }
 
   .owner-content {
@@ -121,12 +146,21 @@ const emit = defineEmits<{
     display: flex;
     align-items: center;
     gap: 12px;
-    font-size: 14px;
 
     .user-meta {
       display: flex;
       flex-direction: column;
-      gap: 4px;
+      gap: 6px;
+
+      > div:first-child {
+        font-size: 16px;
+        font-weight: 500;
+      }
+
+      > div:last-child {
+        font-size: 12px;
+        opacity: 0.55;
+      }
     }
   }
 
@@ -135,6 +169,24 @@ const emit = defineEmits<{
     align-items: center;
     justify-content: space-between;
     font-size: 14px;
+    opacity: 0.85;
+
+    .create-btn {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+  }
+
+  .cover-fallback {
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    padding: 16px;
+    object-fit: contain;
+    background: rgba(128, 128, 128, 0.16);
   }
 
   .playlist-list {
@@ -153,6 +205,7 @@ const emit = defineEmits<{
 
       .cover-wrap {
         position: relative;
+        flex-shrink: 0;
 
         .wave-overlay {
           position: absolute;
@@ -166,8 +219,16 @@ const emit = defineEmits<{
       .item-meta {
         display: flex;
         flex-direction: column;
-        gap: 4px;
-        font-size: 14px;
+        gap: 6px;
+
+        > div:first-child {
+          font-size: 15px;
+        }
+
+        > div:last-child {
+          font-size: 12px;
+          opacity: 0.55;
+        }
       }
     }
   }

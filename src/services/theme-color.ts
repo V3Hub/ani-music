@@ -96,10 +96,12 @@ export function applyThemeColor(hex: string) {
   root.style.setProperty('--theme-primary', hex)
   root.style.setProperty('--theme-background', darker)
   root.style.setProperty('--theme-rgb', `${r}, ${g}, ${b}`)
-
-  // 根据亮度决定文字是白还是黑
-  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
-  root.style.setProperty('--theme-text', luminance > 0.6 ? '#1a1a2e' : '#ffffff')
+  // 文字色按「实际背景色」的亮度决定黑白，保证与背景对比度足够
+  const bgRgb = hexToRgb(darker)
+  const bgLuminance = bgRgb
+    ? (0.299 * bgRgb.r + 0.587 * bgRgb.g + 0.114 * bgRgb.b) / 255
+    : 0
+  root.style.setProperty('--theme-text', bgLuminance > 0.55 ? '#1a1a2e' : '#ffffff')
 }
 
 /** 计算歌曲主题色：本地 canvas 优先，跨域失败时回退后端解析结果 */

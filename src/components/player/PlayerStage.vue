@@ -214,16 +214,19 @@ function onSliderDragEnd() {
         font-size: 16px;
         line-height: 1.6;
         text-align: left;
-        color: rgba(255, 255, 255, 0.5);
+        color: var(--theme-text, #fff);
+        opacity: 0.5;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
         transition:
           color 0.2s,
+          opacity 0.2s,
           font-size 0.2s;
 
         &.active {
-          color: #fff;
+          color: var(--theme-text, #fff);
+          opacity: 1;
           font-size: 17px;
           font-weight: 500;
         }
@@ -244,7 +247,7 @@ function onSliderDragEnd() {
       font-size: 25px;
       font-weight: 600;
       line-height: 1.3;
-      color: #fff;
+      color: var(--theme-text, #fff);
     }
 
     .tag {
@@ -256,13 +259,15 @@ function onSliderDragEnd() {
     }
 
     .tag-outline {
-      color: rgba(255, 255, 255, 0.9);
-      border: 1px solid rgba(255, 255, 255, 0.45);
+      color: var(--theme-text, #fff);
+      opacity: 0.9;
+      border: 1px solid rgba(128, 128, 128, 0.45);
     }
 
     .tag-solid {
-      color: rgba(255, 255, 255, 0.9);
-      background: rgba(255, 255, 255, 0.18);
+      color: var(--theme-text, #fff);
+      opacity: 0.9;
+      background: rgba(128, 128, 128, 0.28);
     }
   }
 
@@ -275,7 +280,8 @@ function onSliderDragEnd() {
 
     .artist {
       font-size: 14px;
-      color: rgba(255, 255, 255, 0.65);
+      color: var(--theme-text, #fff);
+      opacity: 0.65;
     }
 
     .follow-btn {
@@ -283,8 +289,8 @@ function onSliderDragEnd() {
       border: none;
       border-radius: 999px;
       font-size: 11px;
-      color: #fff;
-      background: rgba(255, 255, 255, 0.18);
+      color: var(--theme-text, #fff);
+      background: rgba(128, 128, 128, 0.28);
     }
   }
 
@@ -307,7 +313,8 @@ function onSliderDragEnd() {
 
       .action-count {
         font-size: 11px;
-        color: rgba(255, 255, 255, 0.7);
+        color: var(--theme-text, #fff);
+        opacity: 0.7;
       }
     }
 
@@ -319,10 +326,10 @@ function onSliderDragEnd() {
 
       .listen-btn {
         padding: 7px 14px;
-        border: 1px solid rgba(255, 255, 255, 0.35);
+        border: 1px solid rgba(128, 128, 128, 0.45);
         border-radius: 999px;
         font-size: 13px;
-        color: #fff;
+        color: var(--theme-text, #fff);
         background: transparent;
       }
 
