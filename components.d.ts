@@ -20,7 +20,6 @@ declare module 'vue' {
     RouterView: typeof import('vue-router')['RouterView']
     SongListDrawer: typeof import('./src/components/playlist/SongListDrawer.vue')['default']
     SongSearchPopup: typeof import('./src/components/player/SongSearchPopup.vue')['default']
-    VanBadge: typeof import('vant/es')['Badge']
     VanButton: typeof import('vant/es')['Button']
     VanCell: typeof import('vant/es')['Cell']
     VanCellGroup: typeof import('vant/es')['CellGroup']
@@ -38,7 +37,6 @@ declare module 'vue' {
     VanRadio: typeof import('vant/es')['Radio']
     VanRadioGroup: typeof import('vant/es')['RadioGroup']
     VanSlider: typeof import('vant/es')['Slider']
-    VanTag: typeof import('vant/es')['Tag']
     WaveBox: typeof import('./src/components/waveBox/WaveBox.vue')['default']
   }
 }
