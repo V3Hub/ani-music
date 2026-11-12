@@ -74,8 +74,9 @@ function isAllowedReferer(request) {
   if (!ref) return false
   const allowDomain = [
     'https://v3hub.cc.cd',
+    'https://53hub.cc.cd',
     'https://v3hub.site',
-    'https://ain.l.cd',
+    'https://music.ani.l.cd',
     'http://localhost',
     'http://199.28.',
   ]
