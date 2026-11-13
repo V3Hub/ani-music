@@ -2,11 +2,10 @@
   <van-popup
     v-model:show="visible"
     position="right"
-    round
     class="song-list-popup"
     :style="{ width: '100%', height: '100%' }"
   >
-    <div class="song-list">
+    <div class="song-list" :style="swipeStyle" v-on="handlers">
       <div class="detail-header">
         <van-icon name="arrow-left" size="20" class="header-icon" @click="visible = false" />
         <van-icon
@@ -59,9 +58,7 @@
             @click="playSongList(item.id)"
           >
             <div class="row-index">
-              <div v-if="currentSong?.id === item.id && isPlaying" class="wave-box">
-                <span /><span /><span />
-              </div>
+              <WaveBox v-if="currentSong?.id === item.id" :playing="isPlaying" />
               <span v-else class="index-num">{{ index + 1 }}</span>
             </div>
             <div class="row-main">
@@ -96,8 +93,9 @@ import { PlaylistSource } from '@/constants/playlist'
 import { playByIndex } from '@/services/audio-player'
 import { usePlayerStore } from '@/stores/player'
 import PlaylistActionSheet from '@/components/playlist/PlaylistActionSheet.vue'
-import { computed, ref, watch } from 'vue'
-import { useSwipe } from '@vueuse/core'
+import WaveBox from '@/components/waveBox/WaveBox.vue'
+import { useSwipeClose } from '@/composables/useSwipeClose'
+import { computed, ref } from 'vue'
 
 const props = defineProps<{
   activePlaylist: PlaylistItem | null
@@ -172,32 +170,16 @@ async function playSongList(id?: string | number) {
 }
 
 // ========== 右滑关闭 ==========
-let cleanup: (() => void) | null = null
-watch(visible, (val) => {
-  if (val) {
-    const target = document.querySelector('.van-popup') as HTMLElement | null
-    if (target) {
-      const { stop } = useSwipe(target, {
-        threshold: 80,
-        passive: true,
-        onSwipeEnd(_, direction) {
-          if (direction === 'right') {
-            visible.value = false
-          }
-        },
-      })
-      cleanup = stop
-    }
-  } else {
-    cleanup?.()
-    cleanup = null
-  }
+const { swipeStyle, handlers } = useSwipeClose(() => {
+  if (playlistActionVisible.value)
+    return
+  visible.value = false
 })
 </script>
 
 <style scoped lang="scss">
 .song-list-popup {
-  background: var(--theme-background, #1a1a1a) !important;
+  background: transparent !important;
 }
 
 .song-list {
@@ -206,6 +188,8 @@ watch(visible, (val) => {
   width: 100%;
   height: 100%;
   color: var(--theme-text, #fff);
+  background: var(--theme-background, #1a1a1a);
+  touch-action: pan-y;
 
   .detail-header {
     display: flex;

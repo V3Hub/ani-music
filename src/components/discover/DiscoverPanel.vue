@@ -44,9 +44,11 @@ const emit = defineEmits<{
 
 <style lang="scss" scoped>
 .discover-panel {
-  height: 100%;
-  padding: 12px 16px 24px;
+  flex: 1;
+  min-height: 0;
+  padding: 12px 16px calc(24px + env(safe-area-inset-bottom));
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   color: var(--theme-text, #fff);
 }
 

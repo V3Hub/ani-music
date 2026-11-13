@@ -4,13 +4,48 @@
       v-for="item in navItems"
       :key="item.key"
       class="nav-item"
-      :class="{ 'is-active': currentTab === item.key, 'is-center': item.key === 'music' }"
+      :class="{
+        'is-active': currentTab === item.key,
+        'is-center': item.key === 'music',
+        'is-mini': item.key === 'music' && !isOnPlayTab,
+      }"
       @click="onItemClick(item.key)"
     >
       <template v-if="item.key === 'music'">
-        <div class="play-trigger" :class="{ 'is-disabled': !canPlay }">
-          <van-icon :name="isPlaying ? 'pause' : 'play'" size="18" />
+        <!-- ===== 播放页：白色描边圆圈 + play/pause 图标切换 ===== -->
+        <div v-if="isOnPlayTab" class="play-trigger original" :class="{ 'is-disabled': !canPlay }">
+          <van-icon v-if="!isPlaying || !canPlay" name="play" size="18" />
+          <van-icon v-else name="pause" size="18" />
         </div>
+
+        <!-- ===== 非播放页：小封面图标 + 锥形波形 ===== -->
+        <template v-else>
+          <div class="play-trigger mini" :class="{ 'is-disabled': !canPlay }">
+            <van-image
+              v-if="cover"
+              class="cover-bg"
+              :src="cover"
+              width="20"
+              height="20"
+              fit="cover"
+            >
+              <template #error>
+                <div class="cover-fallback">
+                  <van-icon name="music-o" size="10" />
+                </div>
+              </template>
+            </van-image>
+            <div v-else class="cover-fallback">
+              <van-icon name="music-o" size="10" />
+            </div>
+
+            <!-- 统一波形：播放时动画，暂停时静止 -->
+            <div class="play-overlay">
+              <WaveBox :playing="isPlaying && canPlay" variant="mini" />
+            </div>
+          </div>
+          <span class="nav-label center-label">音乐</span>
+        </template>
       </template>
       <template v-else>
         <span class="nav-label">{{ item.label }}</span>
@@ -21,12 +56,15 @@
 
 <script setup lang="ts">
 import type { PlayerNavItem } from '@/constants/player-ui'
+import { computed } from 'vue'
+import WaveBox from '@/components/waveBox/WaveBox.vue'
 
 const props = defineProps<{
   navItems: PlayerNavItem[]
   currentTab: string
   isPlaying: boolean
   canPlay: boolean
+  cover?: string
 }>()
 
 const emit = defineEmits<{
@@ -34,17 +72,18 @@ const emit = defineEmits<{
   (e: 'togglePlayback'): void
 }>()
 
-/** 中间圆形按钮：在播放页直接播放/暂停，其它 Tab 先回到播放页 */
+const isOnPlayTab = computed(() => props.currentTab === 'music')
+
 function onItemClick(tab: string) {
-  if (tab !== 'music') {
+  if (tab === 'music') {
+    if (props.currentTab === 'music' && props.canPlay) {
+      emit('togglePlayback')
+    } else {
+      emit('navigate', 'music')
+    }
+  } else {
     emit('navigate', tab)
-    return
   }
-  // 已在播放页且当前歌曲可播放时才切换播放/暂停，否则只做页签跳转
-  if (props.currentTab === 'music' && props.canPlay)
-    emit('togglePlayback')
-  else
-    emit('navigate', tab)
 }
 </script>
 
@@ -80,25 +119,103 @@ function onItemClick(tab: string) {
     }
 
     &.is-center {
-      flex: 0 0 auto;
+      flex: 0 0 72px;
       width: 72px;
+      height: 52px;
+      overflow: hidden;
     }
 
-    .play-trigger {
+    &.is-mini.is-center {
+      gap: 3px;
+
+      .center-label {
+        opacity: 0.7;
+        font-size: 13px;
+        white-space: nowrap;
+      }
+
+      &.is-active .center-label {
+        opacity: 1;
+        font-weight: 600;
+      }
+    }
+  }
+
+  // ===== 播放页：白色描边圆圈 =====
+  .play-trigger.original {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    border: 2px solid #fff;
+    border-radius: 50%;
+    background: transparent;
+    color: #fff;
+    box-sizing: border-box;
+    transition: transform 0.15s ease;
+
+    &:active {
+      transform: scale(0.92);
+    }
+
+    &.is-disabled {
+      opacity: 0.35;
+    }
+  }
+
+  // ===== 非播放页：圆角方形小图标 =====
+  .play-trigger.mini {
+    position: relative;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 5px;
+    overflow: hidden;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+    transition: transform 0.15s ease;
+    background: rgba(128, 128, 128, 0.22);
+
+    &:active {
+      transform: scale(0.92);
+    }
+
+    &.is-disabled {
+      opacity: 0.4;
+      box-shadow: none;
+    }
+
+    .cover-bg {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      border-radius: 5px;
+      overflow: hidden;
+    }
+
+    .cover-fallback {
+      position: absolute;
+      inset: 0;
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 50px;
-      height: 50px;
-      border: 2px solid var(--theme-text, #fff);
-      border-radius: 50%;
-      background: rgba(128, 128, 128, 0.16);
-      color: var(--theme-text, #fff);
-      box-sizing: border-box;
+      color: rgba(255, 255, 255, 0.7);
+      background: rgba(128, 128, 128, 0.25);
+    }
 
-      &.is-disabled {
-        opacity: 0.45;
-      }
+    .play-overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.85));
     }
   }
 }
