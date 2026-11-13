@@ -48,6 +48,9 @@ export function fetchLyric(song: Song): Promise<LyricLine[]> {
           song.favorite = detail.favorite
         if (typeof detail.favoriteCount === 'number')
           song.favoriteCount = detail.favoriteCount
+        // 详情里带库中已存的主题色，直接复用，省掉封面取色
+        if (detail.themeColor)
+          song.themeColor = detail.themeColor
       }
       const lines = getLyricList(raw)
       lyricCache.set(key, lines)

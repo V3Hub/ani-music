@@ -1057,39 +1057,11 @@ async function handleGetSongDetail(request, env) {
 const themeColorCache = new Map()
 const FALLBACK_PALETTE = ['#7a3b3b', '#3b5a7a', '#4c3b7a', '#7a6a3b', '#3b7a5a', '#7a3b6a']
 
-/** song_meta 表是否已确认存在（isolate 级标记，只建一次表） */
-let songMetaReady = false
-
-/** 确保 song_meta 表存在：懒建表，不需要额外的手动迁移 */
-async function ensureSongMetaTable(DB) {
-  if (songMetaReady) return
-  await DB.prepare(
-    `CREATE TABLE IF NOT EXISTS song_meta (
-      song_id INTEGER PRIMARY KEY,
-      theme_color TEXT,
-      update_time TEXT DEFAULT CURRENT_TIMESTAMP
-    )`,
-  ).run()
-  songMetaReady = true
-}
-
-/** 读取客户端上报过的主题色；表不存在或查询失败时返回空串 */
-async function readStoredThemeColor(DB, id) {
-  try {
-    await ensureSongMetaTable(DB)
-    const row = await DB.prepare('SELECT theme_color FROM song_meta WHERE song_id = ?').bind(id).first()
-    return row?.theme_color || ''
-  } catch (e) {
-    console.warn('[song-meta] 读取主题色失败', e.message)
-    return ''
-  }
-}
-
 /**
  * 上报歌曲缺失元信息 POST /api/song/meta
  * body: { id, duration?, themeColor? }
  *  - duration：只在库里为空/0 时补写，不覆盖上游更准确的数据
- *  - themeColor：写入 song_meta（songs 表没有该列）
+ *  - themeColor：写入 songs.theme_color
  */
 async function handleUpdateSongMeta(request, env) {
   const body = await request.json().catch(() => ({}))
@@ -1110,15 +1082,8 @@ async function handleUpdateSongMeta(request, env) {
 
   const themeColor = typeof body.themeColor === 'string' ? body.themeColor.trim() : ''
   if (/^#[0-9a-f]{6}$/i.test(themeColor)) {
-    await ensureSongMetaTable(DB)
-    await DB.prepare(
-      `INSERT INTO song_meta (song_id, theme_color, update_time)
-       VALUES (?, ?, CURRENT_TIMESTAMP)
-       ON CONFLICT(song_id) DO UPDATE SET theme_color = excluded.theme_color, update_time = CURRENT_TIMESTAMP`,
-    )
-      .bind(id, themeColor)
-      .run()
-    // 同步刷新 isolate 缓存
+    await DB.prepare('UPDATE songs SET theme_color = ? WHERE id = ?').bind(themeColor, id).run()
+    // 同步刷新 isolate 缓存，避免旧颜色继续命中
     const cached = themeColorCache.get(String(id))
     if (cached) cached.color = themeColor
     updated = true
@@ -1141,15 +1106,14 @@ async function handleGetSongThemeColor(request, env) {
     return jsonResp({ code: 200, msg: '请求成功', data: themeColorCache.get(id) })
   }
 
-  const row = await env.DB.prepare('SELECT id, cover_url FROM songs WHERE id = ?').bind(id).first()
+  const row = await env.DB.prepare('SELECT id, cover_url, theme_color FROM songs WHERE id = ?').bind(id).first()
   if (!row) return jsonResp({ code: 404, msg: '歌曲不存在' })
 
   const pic = row.cover_url || ''
 
-  // 客户端上报过就直接复用，省掉一次封面下载 + 解码
-  const stored = await readStoredThemeColor(env.DB, id)
-  if (stored) {
-    const data = { id: row.id, pic, color: stored, rgb: hexToRgb(stored), fallback: false }
+  // 库里已有客户端上报的主题色：直接复用，省掉封面下载 + 解码
+  if (row.theme_color) {
+    const data = { id: row.id, pic, color: row.theme_color, rgb: hexToRgb(row.theme_color), fallback: false }
     if (themeColorCache.size > 500) themeColorCache.clear()
     themeColorCache.set(id, data)
     return jsonResp({ code: 200, msg: '请求成功', data })
