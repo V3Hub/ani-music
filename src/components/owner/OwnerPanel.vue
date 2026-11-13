@@ -1,7 +1,7 @@
 <template>
   <div class="owner-panel">
     <div class="owner-header">
-      <div>10小时48分钟</div>
+      <div class="listen-time">今日已听 {{ listenTime }}</div>
       <van-icon class="settings-btn" name="setting-o" size="22" @click="emit('openSettings')" />
     </div>
     <div class="owner-content">
@@ -96,6 +96,8 @@ defineProps<{
   favoriteSongs: Song[]
   activePlaylist: PlaylistItem | null
   isPlaying: boolean
+  /** 今日听歌时长文案 */
+  listenTime: string
 }>()
 
 const emit = defineEmits<{
@@ -133,6 +135,11 @@ function coverOf(pic?: string) {
     align-items: center;
     justify-content: space-between;
     padding: 5px;
+
+    .listen-time {
+      font-size: 13px;
+      opacity: 0.6;
+    }
 
     .settings-btn {
       color: var(--theme-text, #fff);

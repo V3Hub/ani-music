@@ -266,6 +266,22 @@ export async function getSongThemeColor(id: string | number): Promise<SongThemeC
   }
 }
 
+/**
+ * 上报歌曲缺失的元信息（总时长 / 主题色）
+ * 后端只在字段为空时补写，失败静默，不影响播放
+ */
+export async function reportSongMeta(
+  id: number | string,
+  meta: { duration?: number, themeColor?: string },
+): Promise<boolean> {
+  try {
+    await request.post('/api/song/meta', { id, ...meta })
+    return true
+  } catch {
+    return false
+  }
+}
+
 /** 远程获取 LRC 歌词文本（worker 歌词挂在歌曲详情里，无独立歌词接口） */
 export async function getSongLyric(id: number | string): Promise<string> {
   try {
