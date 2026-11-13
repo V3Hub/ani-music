@@ -38,7 +38,7 @@ export const LISTENING_SCENES: ListeningSceneOption[] = [
   { value: 'library', label: '图书馆', icon: 'book-o' },
   { value: 'emo', label: '深夜EMO', icon: 'moon-o' },
   { value: 'dj', label: 'DJ模式', icon: 'music-o' },
-  { value: 'sleep', label: '助眠模式', icon: 'clear' },
+  { value: 'sleep', label: '助眠模式', icon: 'closed-eye' },
 ]
 
 /** 底部导航 */

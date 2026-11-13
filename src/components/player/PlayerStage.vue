@@ -2,10 +2,8 @@
   <div class="player-stage">
     <Swiper
       v-model:slide-index="swiperIndex"
-      :modules="[Virtual]"
       direction="vertical"
       :loop="player.playList.length > 2"
-      :virtual="true"
       :slides-per-view="1"
       :space-between="0"
       :allow-touch-move="true"
@@ -13,7 +11,7 @@
       @swiper="onSwiperReady"
       @slide-change-transition-end="onSlideChange"
     >
-      <SwiperSlide v-for="(song, songIndex) in player.playList" :key="song.id" :virtual-index="songIndex">
+      <SwiperSlide v-for="song in player.playList" :key="song.id">
         <div class="slide-content">
           <div class="cover-box">
             <van-image width="100%" height="100%" :src="song.pic ?? ''" fit="cover" />
@@ -82,7 +80,7 @@
               </svg>
             </div>
           </div>
-          <div class="music-progress">
+          <div class="music-progress swiper-no-swiping">
             <!-- 缓冲进度：已缓存部分 -->
             <div
               class="buffer-bar"
@@ -93,9 +91,9 @@
               :min="0"
               :max="player.duration || 1"
               :step="1"
-              :readonly="!isCurrent(song) || !player.canplay"
+              :readonly="!isCurrent(song)"
               bar-height="3"
-              button-size="12"
+              button-size="14"
               active-color="#fff"
               inactive-color="transparent"
               @update:model-value="onSliderUpdate"
@@ -115,9 +113,7 @@ import { useLyricSync, resolveLyricLines } from '@/composables/player/useLyricSy
 import { useSongCarousel } from '@/composables/player/useSongCarousel'
 import { usePlayerStore } from '@/stores/player'
 import { Swiper, SwiperSlide } from 'swiper/vue'
-import { Virtual } from 'swiper/modules'
 import 'swiper/css'
-import 'swiper/css/virtual'
 import { ref, watch } from 'vue'
 
 const props = defineProps<{ favoriteSongs: Song[] }>()
@@ -182,6 +178,7 @@ function onSliderDragEnd() {
     flex-direction: column;
     padding: 35px 20px 60px;
     box-sizing: border-box;
+    overflow: hidden;
   }
 
   .cover-box {
@@ -247,20 +244,25 @@ function onSliderDragEnd() {
   .song-title {
     display: flex;
     align-items: center;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 8px;
+    min-width: 0;
     margin-top: 16px;
     flex-shrink: 0;
 
     h3 {
+      min-width: 0;
       margin: 0;
       font-size: 25px;
       font-weight: 600;
       line-height: 1.3;
       color: var(--theme-text, #fff);
+      white-space: nowrap;
+      overflow: hidden;
     }
 
     .tag {
+      flex-shrink: 0;
       padding: 2px 7px;
       border-radius: 6px;
       font-size: 11px;
@@ -285,20 +287,27 @@ function onSliderDragEnd() {
     display: flex;
     align-items: center;
     gap: 10px;
+    min-width: 0;
+    overflow: hidden;
     margin-top: 10px;
     flex-shrink: 0;
 
     .artist {
+      min-width: 0;
       font-size: 14px;
       color: var(--theme-text, #fff);
       opacity: 0.65;
+      white-space: nowrap;
+      overflow: hidden;
     }
 
     .follow-btn {
+      flex-shrink: 0;
       padding: 3px 11px;
       border: none;
       border-radius: 999px;
       font-size: 11px;
+      white-space: nowrap;
       color: var(--theme-text, #fff);
       background: rgba(128, 128, 128, 0.28);
     }
@@ -307,12 +316,16 @@ function onSliderDragEnd() {
   .action-row {
     display: flex;
     align-items: center;
+    flex-wrap: nowrap;
     gap: 26px;
+    min-width: 0;
+    overflow: hidden;
     margin-top: 18px;
     flex-shrink: 0;
 
     .action-item {
       display: flex;
+      flex-shrink: 0;
       flex-direction: column;
       align-items: center;
       gap: 1px;
@@ -374,11 +387,14 @@ function onSliderDragEnd() {
       position: relative;
       z-index: 1;
       background: transparent;
+      // 手势完全交给滑块，不与纵向轮播抢
+      touch-action: none;
 
+      // 用伪元素扩大触摸热区（不改滑块本体布局）
       &::before {
         content: '';
         position: absolute;
-        inset: -10px 0; // 扩大触摸热区，细进度条也好拖
+        inset: -14px 0;
       }
     }
 

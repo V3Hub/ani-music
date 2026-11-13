@@ -24,17 +24,13 @@ declare module 'vue' {
     SongActionSheet: typeof import('./src/components/playlist/SongActionSheet.vue')['default']
     SongListDrawer: typeof import('./src/components/playlist/SongListDrawer.vue')['default']
     SongSearchPopup: typeof import('./src/components/player/SongSearchPopup.vue')['default']
-    VanCellGroup: typeof import('vant/es')['CellGroup']
     VanEmpty: typeof import('vant/es')['Empty']
-    VanGrid: typeof import('vant/es')['Grid']
-    VanGridItem: typeof import('vant/es')['GridItem']
     VanIcon: typeof import('vant/es')['Icon']
     VanImage: typeof import('vant/es')['Image']
     VanLoading: typeof import('vant/es')['Loading']
     VanPopup: typeof import('vant/es')['Popup']
-    VanRadio: typeof import('vant/es')['Radio']
-    VanRadioGroup: typeof import('vant/es')['RadioGroup']
     VanSlider: typeof import('vant/es')['Slider']
     WaveBox: typeof import('./src/components/waveBox/WaveBox.vue')['default']
+    WelfarePanel: typeof import('./src/components/welfare/WelfarePanel.vue')['default']
   }
 }
