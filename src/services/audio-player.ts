@@ -9,6 +9,7 @@ import type { Song } from '@/types/music'
  *  - 组件只与 Pinia store 响应式引用绑定，不直接操作 audio
  */
 import { addSongToPlayRecord, reportPlay } from '@/api/music'
+import { reportSongDuration } from '@/services/song-meta-reporter'
 import { usePlayerStore } from '@/stores/player'
 import { watch } from 'vue'
 
@@ -34,6 +35,8 @@ function bindEvents() {
   audio.addEventListener('loadedmetadata', () => {
     playerStore.setDuration(audio.duration || 0)
     syncBuffered()
+    // 库里没有总时长的歌曲，把客户端拿到的真实时长回报后端
+    reportSongDuration(playerStore.currentSong, audio.duration)
   })
 
   // 浏览器下载/缓冲有进展：刷新已缓冲秒数，用于进度条的浅色缓冲段

@@ -38,13 +38,16 @@ export function fetchLyric(song: Song): Promise<LyricLine[]> {
   const task = (async () => {
     try {
       let raw = song.lrc
-      if (!raw) {
-        // 播放时从详情接口补齐：歌词 + 收藏状态
+      // 歌词 / 收藏状态 / 收藏数任一缺失都走详情接口补齐（列表接口不返回收藏数）
+      const needDetail = !raw || typeof song.favorite !== 'boolean' || typeof song.favoriteCount !== 'number'
+      if (needDetail) {
         const detail = await getSongDetail(key)
-        raw = detail.lrc ?? ''
+        raw = raw || detail.lrc || ''
         song.lrc = raw
         if (typeof detail.favorite === 'boolean')
           song.favorite = detail.favorite
+        if (typeof detail.favoriteCount === 'number')
+          song.favoriteCount = detail.favoriteCount
       }
       const lines = getLyricList(raw)
       lyricCache.set(key, lines)

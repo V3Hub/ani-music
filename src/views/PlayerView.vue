@@ -38,6 +38,7 @@
         :favorite-songs="favoriteSongs"
         :active-playlist="activePlaylist"
         :is-playing="player.isPlaying"
+        :listen-time="listenTimeText"
         @open-favorite="onOpenFavorite"
         @open-history="onOpenHistory"
         @open-playlist="onOpenPlaylist"
@@ -131,7 +132,7 @@
 
 <script setup lang="ts">
 import type { PlaylistItem, Song } from '@/types/music'
-import { addSongToFavorite, fetchSongs, getFavoriteList, getRecommendList, removeSongFromFavorite } from '@/api/music'
+import { addSongToFavorite, fetchSongs, getFavoriteList, getRecommendList, getSongDetail, removeSongFromFavorite } from '@/api/music'
 import { PlaylistSource } from '@/constants/playlist'
 import { showToast } from 'vant'
 import { useListeningMode } from '@/composables/player/useListeningMode'
@@ -141,6 +142,7 @@ import { usePlaylistLibrary } from '@/composables/player/usePlaylistLibrary'
 import { usePlayQueue } from '@/composables/player/usePlayQueue'
 import { usePlayerNavigation } from '@/composables/player/usePlayerNavigation'
 import { usePlaybackSource } from '@/composables/player/usePlaybackSource'
+import { useListenTimeStat } from '@/composables/useListenTimeStat'
 import { usePlayerStore } from '@/stores/player'
 import { play } from '@/services/audio-player'
 import { computed, onMounted, ref } from 'vue'
@@ -200,6 +202,7 @@ const {
   setSleepTimer,
 } = usePlaybackSource()
 const { togglePlayback } = usePlaybackControl()
+const { listenTimeText } = useListenTimeStat()
 
 const {
   userToken,
@@ -336,22 +339,12 @@ function onOpenSongActions(song: Song) {
   songActionVisible.value = true
 }
 
-/** 喜欢 / 取消喜欢当前操作歌曲 */
-async function onActionFavorite() {
+/** 喜欢 / 取消喜欢当前操作歌曲（即时生效，接口后台同步） */
+function onActionFavorite() {
   const song = actionSong.value
   if (!song)
     return
-  const next = !isFavoriteSong(song)
-  const ok = next ? await addSongToFavorite(song.id) : await removeSongFromFavorite(song.id)
-  if (!ok) {
-    showToast(next ? '收藏失败' : '取消收藏失败')
-    return
-  }
-  song.favorite = next
-  favoriteSongs.value = next
-    ? [song, ...favoriteSongs.value.filter(item => item.id !== song.id)]
-    : favoriteSongs.value.filter(item => item.id !== song.id)
-  showToast(next ? '已收藏' : '已取消收藏')
+  applyFavorite(song, !isFavoriteSong(song))
 }
 
 /** 从当前歌单移除操作歌曲 */
@@ -380,18 +373,10 @@ async function onSelectPlaylistTarget(target: number | 'favorite') {
     return
 
   if (target === 'favorite') {
-    if (isFavoriteSong(song)) {
+    if (isFavoriteSong(song))
       showToast('已在喜欢的歌单中')
-    } else {
-      const ok = await addSongToFavorite(song.id)
-      if (ok) {
-        song.favorite = true
-        favoriteSongs.value = [song, ...favoriteSongs.value.filter(item => item.id !== song.id)]
-        showToast('已添加到喜欢的歌单')
-      } else {
-        showToast('添加失败')
-      }
-    }
+    else
+      applyFavorite(song, true)
   } else {
     await addSongToPlaylist(song.id, target)
   }
@@ -423,26 +408,54 @@ function isFavoriteSong(song: Song): boolean {
   return favoriteSongs.value.some(item => item.id === song.id)
 }
 
-/** 收藏 / 取消收藏当前歌曲，并同步本地收藏列表 */
-async function onFavorite(id?: string | number) {
-  const song = player.currentSong
-  if (!song || (id != null && song.id !== id))
+/** 收藏态即时生效：先更新页面，再后台同步接口，失败回滚 */
+function applyFavorite(song: Song, next: boolean) {
+  const prev = isFavoriteSong(song)
+  if (prev === next)
     return
+  const prevCount = song.favoriteCount
 
-  const next = !isFavoriteSong(song)
-  const ok = next ? await addSongToFavorite(song.id) : await removeSongFromFavorite(song.id)
-  if (!ok) {
-    showToast(next ? '收藏失败' : '取消收藏失败')
-    return
-  }
-
+  // 1. 立即更新页面：歌曲标记 + 收藏列表
   song.favorite = next
   // 收藏数默认按 0 处理，收藏 / 取消时本地 ±1
   song.favoriteCount = Math.max(0, (song.favoriteCount ?? 0) + (next ? 1 : -1))
   favoriteSongs.value = next
     ? [song, ...favoriteSongs.value.filter(item => item.id !== song.id)]
     : favoriteSongs.value.filter(item => item.id !== song.id)
-  showToast(next ? '已收藏' : '已取消收藏')
+
+  // 2. 后台同步接口
+  function rollback() {
+    song.favorite = prev
+    song.favoriteCount = prevCount
+    const others = favoriteSongs.value.filter(item => item.id !== song.id)
+    favoriteSongs.value = prev ? [song, ...others] : others
+    showToast(next ? '收藏失败' : '取消收藏失败')
+  }
+
+  const request = next ? addSongToFavorite(song.id) : removeSongFromFavorite(song.id)
+  request.then((ok) => {
+    if (!ok) {
+      rollback()
+      return
+    }
+    // 3. 接口成功后拉一次详情，用真实收藏数校正本地估算值
+    getSongDetail(song.id).then((detail) => {
+      if (typeof detail.favorite === 'boolean')
+        song.favorite = detail.favorite
+      if (typeof detail.favoriteCount === 'number')
+        song.favoriteCount = detail.favoriteCount
+      const others = favoriteSongs.value.filter(item => item.id !== song.id)
+      favoriteSongs.value = song.favorite ? [song, ...others] : others
+    }).catch(() => {})
+  }).catch(rollback)
+}
+
+/** 收藏 / 取消收藏当前歌曲，并同步本地收藏列表 */
+function onFavorite(id?: string | number) {
+  const song = player.currentSong
+  if (!song || (id != null && song.id !== id))
+    return
+  applyFavorite(song, !isFavoriteSong(song))
 }
 
 onMounted(async () => {

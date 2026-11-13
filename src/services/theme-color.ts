@@ -9,6 +9,7 @@
  */
 import type { Song } from '@/types/music'
 import { getSongThemeColor } from '@/api/music'
+import { reportSongThemeColor } from '@/services/song-meta-reporter'
 
 const DEFAULT_COLOR = '#000000'
 
@@ -124,6 +125,8 @@ export async function syncThemeColor(song: Song) {
 
   song.themeColor = await resolveThemeColor(song)
   applyThemeColor(song.themeColor)
+  // 歌曲原本没有主题色：把算出来的颜色回报后端，下次可直接复用
+  reportSongThemeColor(song, song.themeColor)
 }
 
 /**
@@ -134,6 +137,7 @@ export async function prefetchThemeColor(song?: Song | null) {
   if (!song?.pic || song.themeColor)
     return
   song.themeColor = await resolveThemeColor(song)
+  reportSongThemeColor(song, song.themeColor)
 }
 
 // ========== 颜色工具 ==========

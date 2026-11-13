@@ -146,6 +146,8 @@ function mapSongRow(item, options = {}) {
     song.favorite = Boolean(item.favorite)
     song.favoriteCount = Number(item.favorite_count) || 0
   }
+  // 客户端上报过主题色时才带上，避免列表里出现空字段
+  if (item.theme_color) song.themeColor = item.theme_color
   return song
 }
 
@@ -187,6 +189,7 @@ const ROUTES = {
   '/api/playlist/discover': { GET: handleGetDiscoverPlaylists },
   '/api/song/detail': { GET: handleGetSongDetail },
   '/api/song/theme-color': { GET: handleGetSongThemeColor },
+  '/api/song/meta': { POST: handleUpdateSongMeta },
 }
 
 /** 免 token 白名单：自动登录；播放直链跳转（audio 元素请求无法携带 Authorization 头） */
@@ -1054,6 +1057,76 @@ async function handleGetSongDetail(request, env) {
 const themeColorCache = new Map()
 const FALLBACK_PALETTE = ['#7a3b3b', '#3b5a7a', '#4c3b7a', '#7a6a3b', '#3b7a5a', '#7a3b6a']
 
+/** song_meta 表是否已确认存在（isolate 级标记，只建一次表） */
+let songMetaReady = false
+
+/** 确保 song_meta 表存在：懒建表，不需要额外的手动迁移 */
+async function ensureSongMetaTable(DB) {
+  if (songMetaReady) return
+  await DB.prepare(
+    `CREATE TABLE IF NOT EXISTS song_meta (
+      song_id INTEGER PRIMARY KEY,
+      theme_color TEXT,
+      update_time TEXT DEFAULT CURRENT_TIMESTAMP
+    )`,
+  ).run()
+  songMetaReady = true
+}
+
+/** 读取客户端上报过的主题色；表不存在或查询失败时返回空串 */
+async function readStoredThemeColor(DB, id) {
+  try {
+    await ensureSongMetaTable(DB)
+    const row = await DB.prepare('SELECT theme_color FROM song_meta WHERE song_id = ?').bind(id).first()
+    return row?.theme_color || ''
+  } catch (e) {
+    console.warn('[song-meta] 读取主题色失败', e.message)
+    return ''
+  }
+}
+
+/**
+ * 上报歌曲缺失元信息 POST /api/song/meta
+ * body: { id, duration?, themeColor? }
+ *  - duration：只在库里为空/0 时补写，不覆盖上游更准确的数据
+ *  - themeColor：写入 song_meta（songs 表没有该列）
+ */
+async function handleUpdateSongMeta(request, env) {
+  const body = await request.json().catch(() => ({}))
+  const id = body.id
+  if (id === undefined || id === null || id === '') return jsonResp({ code: 400, msg: 'id不能为空' })
+
+  const DB = env.DB
+  const song = await DB.prepare('SELECT id, duration FROM songs WHERE id = ?').bind(id).first()
+  if (!song) return jsonResp({ code: 404, msg: '歌曲不存在' })
+
+  let updated = false
+
+  const duration = Number(body.duration)
+  if (Number.isFinite(duration) && duration > 0 && !(Number(song.duration) > 0)) {
+    await DB.prepare('UPDATE songs SET duration = ? WHERE id = ?').bind(Math.round(duration), id).run()
+    updated = true
+  }
+
+  const themeColor = typeof body.themeColor === 'string' ? body.themeColor.trim() : ''
+  if (/^#[0-9a-f]{6}$/i.test(themeColor)) {
+    await ensureSongMetaTable(DB)
+    await DB.prepare(
+      `INSERT INTO song_meta (song_id, theme_color, update_time)
+       VALUES (?, ?, CURRENT_TIMESTAMP)
+       ON CONFLICT(song_id) DO UPDATE SET theme_color = excluded.theme_color, update_time = CURRENT_TIMESTAMP`,
+    )
+      .bind(id, themeColor)
+      .run()
+    // 同步刷新 isolate 缓存
+    const cached = themeColorCache.get(String(id))
+    if (cached) cached.color = themeColor
+    updated = true
+  }
+
+  return jsonResp({ code: 200, msg: updated ? '上报成功' : '无需更新', data: { id } })
+}
+
 /**
  * 通过歌曲 id 查封面主题色
  * GET /api/song/theme-color?id=xxx
@@ -1072,6 +1145,16 @@ async function handleGetSongThemeColor(request, env) {
   if (!row) return jsonResp({ code: 404, msg: '歌曲不存在' })
 
   const pic = row.cover_url || ''
+
+  // 客户端上报过就直接复用，省掉一次封面下载 + 解码
+  const stored = await readStoredThemeColor(env.DB, id)
+  if (stored) {
+    const data = { id: row.id, pic, color: stored, rgb: hexToRgb(stored), fallback: false }
+    if (themeColorCache.size > 500) themeColorCache.clear()
+    themeColorCache.set(id, data)
+    return jsonResp({ code: 200, msg: '请求成功', data })
+  }
+
   let color = ''
   let fallback = false
   try {

@@ -6,11 +6,15 @@
   >
     <div class="sidebar-inner">
       <div class="sidebar-header">
-        <span class="sidebar-title">听歌模式</span>
+        <div class="brand-group">
+          <span class="sidebar-brand">Ani 音乐</span>
+          <span class="sidebar-slogan">Music · Always With You</span>
+        </div>
         <button type="button" class="sidebar-close" @click="emit('close')">
           <van-icon name="cross" />
         </button>
       </div>
+      <div class="sidebar-title">听歌模式</div>
 
       <div class="mode-list">
         <button
@@ -122,14 +126,55 @@ const currentMode = defineModel<string>('currentMode', { required: true })
     align-items: center;
     justify-content: space-between;
     gap: 10px;
-    padding: 14px 4px 18px;
+    padding: 6px 4px 16px;
   }
 
-  .sidebar-title {
+  .brand-group {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    min-width: 0;
+  }
+
+  .sidebar-brand {
     font-size: 21px;
-    font-weight: 700;
+    font-weight: 800;
+    line-height: 1.15;
+    letter-spacing: 1.2px;
     color: var(--theme-text, #fff);
-    letter-spacing: 0.5px;
+  }
+
+  .sidebar-slogan {
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 1.6px;
+    text-transform: uppercase;
+    color: var(--theme-text, #fff);
+    opacity: 0.45;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+
+  // 分组小标题：左侧竖条 + 细分割线，层级更清晰
+  .sidebar-title {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 2px 4px 14px;
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 1px;
+    color: var(--theme-text, #fff);
+    opacity: 0.55;
+
+    &::before {
+      content: '';
+      flex-shrink: 0;
+      width: 3px;
+      height: 12px;
+      border-radius: 2px;
+      background: currentColor;
+    }
   }
 
   .sidebar-close {
@@ -137,15 +182,19 @@ const currentMode = defineModel<string>('currentMode', { required: true })
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 30px;
-    height: 30px;
+    width: 28px;
+    height: 28px;
     border: none;
     border-radius: 50%;
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(128, 128, 128, 0.16);
     color: var(--theme-text, #fff);
-    font-size: 16px;
+    font-size: 15px;
+    line-height: 1;
+    opacity: 0.85;
     cursor: pointer;
-    transition: transform 0.15s ease;
+    transition:
+      transform 0.15s ease,
+      background-color 0.2s ease;
 
     &:active {
       transform: scale(0.9);
