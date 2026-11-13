@@ -2,13 +2,15 @@
 export interface PlaybackSourceOption {
   label: string
   value: string
+  /** 可选图标（Vant icon 名称） */
+  icon?: string
 }
 
-export const PLAYBACK_SOURCES = [
-  { label: '网抑云', value: 'netease' },
+export const PLAYBACK_SOURCES: PlaybackSourceOption[] = [
+  { label: '网抑云音乐', value: 'netease' },
   { label: '蛋蛋音乐', value: 'qq' },
-  { label: '米秃音乐', value: 'mitu' },
-] as const
+  { label: '米兔音乐', value: 'mitu' },
+]
 
 /** 播放源标识 —— 即 PLAYBACK_SOURCES 中各项的 value */
 export type PlaybackSource = (typeof PLAYBACK_SOURCES)[number]['value']

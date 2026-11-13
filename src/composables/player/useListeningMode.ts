@@ -4,7 +4,7 @@
 import { LISTENING_MODES, LISTENING_SCENES } from '@/constants/player-ui'
 import { computed, ref } from 'vue'
 
-export const DEFAULT_MODE_NAME = '53音乐'
+export const DEFAULT_MODE_NAME = '模式选择'
 
 export function useListeningMode() {
   const isCollapsed = ref(true)

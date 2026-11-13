@@ -4,7 +4,7 @@
       v-model:slide-index="swiperIndex"
       :modules="[Virtual]"
       direction="vertical"
-      :loop="true"
+      :loop="player.playList.length > 2"
       :virtual="true"
       :slides-per-view="1"
       :space-between="0"
@@ -13,7 +13,7 @@
       @swiper="onSwiperReady"
       @slide-change-transition-end="onSlideChange"
     >
-      <SwiperSlide v-for="song in player.playList" :key="song.id" :virtual-index="song.id">
+      <SwiperSlide v-for="(song, songIndex) in player.playList" :key="song.id" :virtual-index="songIndex">
         <div class="slide-content">
           <div class="cover-box">
             <van-image width="100%" height="100%" :src="song.pic ?? ''" fit="cover" />
@@ -69,7 +69,17 @@
             </div>
             <div class="action-right">
               <button type="button" class="listen-btn">免费听</button>
-              <van-icon name="ellipsis" size="22" color="#FFFFFF" class="more-icon" @click="emit('openQueue')" />
+              <svg
+                class="more-icon"
+                width="22"
+                height="22"
+                viewBox="0 0 22 22"
+                @click="emit('openQueue')"
+              >
+                <circle cx="11" cy="4" r="2" fill="#FFFFFF" />
+                <circle cx="11" cy="11" r="2" fill="#FFFFFF" />
+                <circle cx="11" cy="18" r="2" fill="#FFFFFF" />
+              </svg>
             </div>
           </div>
           <div class="music-progress">
@@ -334,6 +344,7 @@ function onSliderDragEnd() {
       }
 
       .more-icon {
+        display: block;
         cursor: pointer;
       }
     }

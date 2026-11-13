@@ -55,6 +55,7 @@
           :current-tab="currentTab"
           :is-playing="player.isPlaying"
           :can-play="!!player.currentSong?.id && player.canplay"
+          :cover="player.currentSong?.pic ?? ''"
           @navigate="onNavigate"
           @toggle-playback="togglePlayback"
         />
@@ -67,12 +68,11 @@
 
     <PlaybackQueuePopup
       v-model:visible="queueVisible"
-      :playlist-options="playlistOptions"
       :play-mode="playMode"
       @toggle-play-mode="togglePlayMode"
       @share="shareCurrentSong"
       @remove-song="removeSong"
-      @add-to-playlist="selectTargetPlaylist"
+      @open-add-to-playlist="openAddToPlaylistFromQueue"
     />
 
     <SongListDrawer
@@ -89,9 +89,14 @@
     <PlayerSettingsPopup
       v-model:visible="settingsVisible"
       v-model:picker-visible="pickerVisible"
+      v-model:sleep-visible="sleepVisible"
       :source-label="currentSourceLabel"
-      :picker-columns="pickerColumns"
+      :source-options="sourceOptions"
+      :current-source="source"
+      :sleep-label="sleepLabel"
+      :sleep-minutes="sleepMinutes"
       @confirm-source="confirmSource"
+      @set-sleep-timer="setSleepTimer"
     />
 
     <CreatePlaylistPopup v-model:visible="createVisible" :submitting="creatingPlaylist" @submit="onCreatePlaylist" />
@@ -157,6 +162,7 @@ const addToPlaylistVisible = ref(false)
 const actionSong = ref<Song | null>(null)
 
 const keyword = ref('')
+const sleepVisible = ref(false)
 
 const favoriteSongs = ref<Song[]>([])
 
@@ -166,10 +172,14 @@ const { isCollapsed, currentMode, modeList, sceneList, currentModeName, toggleSi
 const {
   settingsVisible,
   pickerVisible,
+  source,
+  sourceOptions,
   currentSourceLabel,
-  pickerColumns,
   openSettings,
   confirmSource,
+  sleepLabel,
+  sleepMinutes,
+  setSleepTimer,
 } = usePlaybackSource()
 const { togglePlayback } = usePlaybackControl()
 
@@ -196,16 +206,11 @@ const {
 const { discoverPlaylists, fetchDiscoverPlaylists, buildDiscoverContext } = usePlaylistDiscovery()
 
 const {
-  playlistOptions,
   playMode,
   togglePlayMode,
   removeSong,
-  selectTargetPlaylist,
   shareCurrentSong,
-} = usePlayQueue({
-  playlists: computed(() => playlists.value),
-  activePlaylistId: computed(() => activePlaylist.value?.id),
-})
+} = usePlayQueue()
 
 // ========== 导航与数据加载 ==========
 function onNavigate(tab: string) {
@@ -302,6 +307,17 @@ function onActionDelete() {
   if (song)
     removeSongFromActive(song.id)
   songActionVisible.value = false
+}
+
+/** 播放列表页「加歌单」：把当前播放歌曲加入歌单（和歌曲操作面板共用同一个选择弹层） */
+function openAddToPlaylistFromQueue() {
+  const song = player.currentSong
+  if (!song) {
+    showToast('还没有播放中的歌曲')
+    return
+  }
+  actionSong.value = song
+  addToPlaylistVisible.value = true
 }
 
 /** 选择目标歌单 */
@@ -402,8 +418,8 @@ onMounted(async () => {
     display: flex;
     flex: 1;
     flex-direction: column;
-    justify-content: space-between;
     height: 100%;
+    min-height: 0;
   }
 
   // 背景层：PlayerStage absolute 铺满 + 延伸进安全区
@@ -419,7 +435,8 @@ onMounted(async () => {
     z-index: 200;
     display: flex;
     width: 100%;
-    height: 100%;
+    flex: 1;
+    min-height: 0;
     pointer-events: none;
   }
 

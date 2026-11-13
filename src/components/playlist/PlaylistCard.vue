@@ -1,8 +1,8 @@
 <template>
   <div class="playlist-card" :style="{ backgroundImage: `url(${item.pic ?? ''})` }">
     <div class="mask" />
-    <div v-if="isActive && isPlaying" class="wave-overlay">
-      <div class="wave-box"><span /><span /><span /></div>
+    <div v-if="isActive" class="wave-overlay">
+      <WaveBox :playing="isPlaying" />
     </div>
     <div class="card-meta">
       <div class="card-name">
@@ -24,6 +24,7 @@
 
 <script setup lang="ts">
 import type { PlaylistItem } from '@/types/music'
+import WaveBox from '@/components/waveBox/WaveBox.vue'
 
 defineProps<{
   item: PlaylistItem

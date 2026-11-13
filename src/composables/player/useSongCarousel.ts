@@ -5,7 +5,7 @@ import type { Song } from '@/types/music'
 import { playByIndex } from '@/services/audio-player'
 import { usePlayerStore } from '@/stores/player'
 import type { Swiper as SwiperType } from 'swiper'
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 
 export function useSongCarousel() {
   const player = usePlayerStore()
@@ -55,8 +55,18 @@ export function useSongCarousel() {
     if (!swiperRef.value) return
     const idx = playList.value.findIndex((song: Song) => song.id === currentSong.value?.id)
     if (idx >= 0 && swiperIndex.value !== idx) {
-      swiperRef.value.slideToLoop(idx, 300)
+      // 列表过短时 loop 被关闭，只能用普通 slideTo
+      if (swiperRef.value.params.loop)
+        swiperRef.value.slideToLoop(idx, 300)
+      else
+        swiperRef.value.slideTo(idx, 300)
     }
+  })
+
+  /** 列表增减（如搜索加入新歌）后刷新轮播，避免 virtual 渲染空白 */
+  watch(() => playList.value.length, async () => {
+    await nextTick()
+    swiperRef.value?.update()
   })
 
   return { swiperRef, swiperIndex, onSwiperReady, onSlideChange }

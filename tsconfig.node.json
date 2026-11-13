@@ -11,6 +11,7 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noEmit": true,
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
     "allowSyntheticDefaultImports": true,
     "isolatedModules": true,
     "skipLibCheck": true,

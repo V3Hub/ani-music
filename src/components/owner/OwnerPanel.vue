@@ -27,8 +27,8 @@
       <ul class="playlist-list">
         <li @click="emit('openFavorite')">
           <div class="cover-wrap">
-            <div v-if="activePlaylist?.source === 'favorite' && isPlaying" class="wave-overlay">
-              <div class="wave-box"><span /><span /><span /></div>
+            <div v-if="activePlaylist?.source === 'favorite'" class="wave-overlay">
+              <WaveBox :playing="isPlaying" />
             </div>
             <van-image width="72" height="72" radius="8" fit="cover" :src="coverOf(favoriteSongs[0]?.pic)">
               <template #error>
@@ -43,8 +43,8 @@
         </li>
         <li @click="emit('openHistory')">
           <div class="cover-wrap">
-            <div v-if="activePlaylist?.source === 'playRecord' && isPlaying" class="wave-overlay">
-              <div class="wave-box"><span /><span /><span /></div>
+            <div v-if="activePlaylist?.source === 'playRecord'" class="wave-overlay">
+              <WaveBox :playing="isPlaying" />
             </div>
             <van-image width="72" height="72" radius="8" fit="cover" :src="coverOf(playHistory[0]?.pic)">
               <template #error>
@@ -64,10 +64,10 @@
         >
           <div class="cover-wrap">
             <div
-              v-if="activePlaylist?.source === 'playlist' && activePlaylist?.id === item.id && isPlaying"
+              v-if="activePlaylist?.source === 'playlist' && activePlaylist?.id === item.id"
               class="wave-overlay"
             >
-              <div class="wave-box"><span /><span /><span /></div>
+              <WaveBox :playing="isPlaying" />
             </div>
             <van-image width="72" height="72" radius="8" fit="cover" :src="coverOf(item.pic)">
               <template #error>
@@ -87,6 +87,7 @@
 
 <script setup lang="ts">
 import type { PlaylistItem, Song } from '@/types/music'
+import WaveBox from '@/components/waveBox/WaveBox.vue'
 
 defineProps<{
   userToken: string
@@ -118,7 +119,12 @@ function coverOf(pic?: string) {
   display: flex;
   flex-direction: column;
   gap: 20px;
-  padding: 10px 20px;
+  padding: 10px 20px calc(16px + env(safe-area-inset-bottom));
+  // flex item 占据剩余空间，内容多时自己滚动
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   // 文字颜色跟随封面主题色计算出的前景色，自动适配深/浅背景
   color: var(--theme-text, #fff);
 

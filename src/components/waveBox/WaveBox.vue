@@ -1,40 +1,55 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+
 interface Props {
-  /** 容器高度（同时决定波纹幅度），单位 px */
-  size?: number
-  /** 波纹条数量 */
-  bars?: number
-  /** 是否播放中（false 时动画暂停） */
+  /** 是否播放中（false 时波形静止） */
   playing?: boolean
-  /** 波纹颜色 */
+  /** 整体尺寸预设 */
+  variant?: 'overlay' | 'mini' | 'large'
+  /** 自定义颜色，默认白色 */
   color?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  size: 10,
-  bars: 3,
   playing: true,
-  color: '#fff',
+  variant: 'overlay',
+  color: '#ffffff',
 })
+
+// 不同 variant 的锥形尺寸配置
+// short = 两边短条高度，tall = 中间长条高度，width = 每根宽，gap = 间距
+const SIZE_MAP = {
+  // 叠在歌单/歌曲封面图上的波形（最常用）
+  overlay: { short: 6, tall: 12, width: 3, gap: 2 },
+  // PlayerBottomNav 中间按钮里的 mini 版
+  mini: { short: 4, tall: 9, width: 2, gap: 2 },
+  // 播放页大按钮上的波形
+  large: { short: 8, tall: 18, width: 4, gap: 3 },
+} as const
+
+const size = computed(() => SIZE_MAP[props.variant])
+
+const bars = computed(() => [
+  { cls: 'bar-short', h: size.value.short },
+  { cls: 'bar-tall', h: size.value.tall },
+  { cls: 'bar-short', h: size.value.short },
+])
 </script>
 
 <template>
   <div
     class="wave-box"
-    :class="{ 'is-paused': !props.playing }"
-    :style="{
-      height: `${props.size}px`,
-      gap: `${Math.max(2, Math.round(props.size / 4))}px`,
-    }"
+    :class="{ 'is-playing': playing }"
+    :style="{ gap: `${size.gap}px` }"
   >
-    <div
-      v-for="i in props.bars"
+    <span
+      v-for="(b, i) in bars"
       :key="i"
-      class="bar"
+      :class="b.cls"
       :style="{
-        width: `${Math.max(2, Math.round(props.size / 5))}px`,
-        background: props.color,
-        animationDelay: `${(i - 1) * 0.2}s`,
+        height: `${b.h}px`,
+        width: `${size.width}px`,
+        background: color,
       }"
     />
   </div>
@@ -43,25 +58,28 @@ const props = withDefaults(defineProps<Props>(), {
 <style lang="scss" scoped>
 .wave-box {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
+  justify-content: center;
 
-  .bar {
-    height: 100%;
-    border-radius: 4px;
-    transform-origin: center center;
-    transform: scaleY(0.35);
-    animation: wave-animate 0.6s ease-in-out infinite;
+  span {
+    display: block;
+    border-radius: 2px;
+    transform-origin: center;
+    animation: bar-bounce 1s ease-in-out infinite;
+    // 默认静止；.is-playing 下才运行
+    animation-play-state: paused;
+    flex-shrink: 0;
   }
 
-  &.is-paused .bar {
-    animation-play-state: paused;
+  &.is-playing span {
+    animation-play-state: running;
   }
 }
 
-@keyframes wave-animate {
+@keyframes bar-bounce {
   0%,
   100% {
-    transform: scaleY(0.35);
+    transform: scaleY(0.6);
   }
   50% {
     transform: scaleY(1);
