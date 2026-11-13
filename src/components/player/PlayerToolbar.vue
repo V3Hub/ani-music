@@ -23,6 +23,7 @@ const emit = defineEmits<{
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
   width: 100%;
   padding: 0 20px;
   box-sizing: border-box;
@@ -33,6 +34,8 @@ const emit = defineEmits<{
     display: flex;
     align-items: center;
     gap: 12px;
+    min-width: 0;
+    overflow: hidden;
     padding: 0;
     border: none;
     background: transparent;
@@ -40,6 +43,7 @@ const emit = defineEmits<{
   }
 
   .toolbar-icon {
+    flex-shrink: 0;
     color: var(--theme-text, #fff);
   }
 
@@ -47,6 +51,8 @@ const emit = defineEmits<{
     font-size: 18px;
     font-weight: 600;
     line-height: 1;
+    white-space: nowrap;
+    overflow: hidden;
   }
 
   .toolbar-search {

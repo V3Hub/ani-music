@@ -1,13 +1,17 @@
 <template>
-  <div class="player-layout">
+  <div class="player-layout" v-on="swipeHandlers">
     <!-- 背景层：PlayerStage 独立一层，absolute 铺满整个屏幕含安全区 -->
     <ListeningModeSidebar
-      v-model:current-mode="currentMode"
-      :collapsed="isCollapsed"
+      :current-mode="currentMode"
+      :width="sidebarWidth"
+      :dragging="dragging"
+      :playing="player.isPlaying && player.canplay"
       :mode-list="modeList"
       :scene-list="sceneList"
+      @update:current-mode="onSelectMode"
+      @close="toggleSidebar"
     />
-    <div class="player-stage-container" :class="{ 'is-collapsed': isCollapsed }">
+    <div class="player-stage-container">
       <PlayerStage
         v-show="currentTab === 'music'"
         class="player-stage-absolute"
@@ -49,6 +53,9 @@
         @open="onOpenDiscover"
         @search="searchVisible = true"
       />
+
+      <WelfarePanel v-if="currentTab === 'benefit'" />
+
       <div class="bottom-bar">
         <PlayerBottomNav
           :nav-items="navList"
@@ -124,7 +131,7 @@
 
 <script setup lang="ts">
 import type { PlaylistItem, Song } from '@/types/music'
-import { addSongToFavorite, fetchSongs, getFavoriteList, removeSongFromFavorite } from '@/api/music'
+import { addSongToFavorite, fetchSongs, getFavoriteList, getRecommendList, removeSongFromFavorite } from '@/api/music'
 import { PlaylistSource } from '@/constants/playlist'
 import { showToast } from 'vant'
 import { useListeningMode } from '@/composables/player/useListeningMode'
@@ -135,6 +142,7 @@ import { usePlayQueue } from '@/composables/player/usePlayQueue'
 import { usePlayerNavigation } from '@/composables/player/usePlayerNavigation'
 import { usePlaybackSource } from '@/composables/player/usePlaybackSource'
 import { usePlayerStore } from '@/stores/player'
+import { play } from '@/services/audio-player'
 import { computed, onMounted, ref } from 'vue'
 import DiscoverPanel from '@/components/discover/DiscoverPanel.vue'
 import ListeningModeSidebar from '@/components/player/ListeningModeSidebar.vue'
@@ -149,6 +157,7 @@ import CreatePlaylistPopup from '@/components/playlist/CreatePlaylistPopup.vue'
 import SongActionSheet from '@/components/playlist/SongActionSheet.vue'
 import AddToPlaylistSheet from '@/components/playlist/AddToPlaylistSheet.vue'
 import OwnerPanel from '@/components/owner/OwnerPanel.vue'
+import WelfarePanel from '@/components/welfare/WelfarePanel.vue'
 
 const player = usePlayerStore()
 
@@ -168,7 +177,16 @@ const favoriteSongs = ref<Song[]>([])
 
 // ========== 组合业务模块 ==========
 const { currentTab, navList, navigate } = usePlayerNavigation()
-const { isCollapsed, currentMode, modeList, sceneList, currentModeName, toggleSidebar } = useListeningMode()
+const {
+  sidebarWidth,
+  dragging,
+  currentMode,
+  modeList,
+  sceneList,
+  currentModeName,
+  toggleSidebar,
+  swipeHandlers,
+} = useListeningMode()
 const {
   settingsVisible,
   pickerVisible,
@@ -213,13 +231,47 @@ const {
 } = usePlayQueue()
 
 // ========== 导航与数据加载 ==========
+/** 刷新「我的」页数据：收藏歌曲 + 用户歌单 + 播放历史 */
+function refreshOwnerData() {
+  getFavoriteList().then((songs) => {
+    favoriteSongs.value = songs
+  }).catch(() => {})
+  fetchUserPlaylists()
+  fetchPlayHistory()
+}
+
 function onNavigate(tab: string) {
   navigate(tab)
   if (tab === 'owner') {
-    fetchUserPlaylists()
-    fetchPlayHistory()
+    // 每次进入「我的」都重新拉取，保证收藏/歌单/历史是最新的
+    refreshOwnerData()
   } else if (tab === 'discover') {
     fetchDiscoverPlaylists()
+  }
+}
+
+// ========== 听歌模式 ==========
+const switchingMode = ref(false)
+
+/** 选择任意模式/场景：统一换成最热歌曲歌单并播放 */
+async function onSelectMode(mode: string) {
+  currentMode.value = mode
+  if (switchingMode.value)
+    return
+  switchingMode.value = true
+  try {
+    const songs = await getRecommendList()
+    if (!songs.length) {
+      showToast('暂时没有推荐歌曲')
+      return
+    }
+    await play(songs[0], songs)
+    showToast('已切换到最热歌曲')
+  } catch (err) {
+    console.warn('[mode] 获取最热歌曲失败', err)
+    showToast('获取最热歌曲失败，请重试')
+  } finally {
+    switchingMode.value = false
   }
 }
 
@@ -230,6 +282,7 @@ function onOpenFavorite() {
 }
 
 function onOpenHistory() {
+  // 立即打开抽屉（先显示空列表），记录在后台拉取后自动刷新
   openHistoryContext()
   drawerRef.value?.open()
 }
@@ -397,21 +450,21 @@ onMounted(async () => {
     const songs = await fetchSongs()
     player.setPlayList(songs, 0)
   }
-  getFavoriteList().then((songs) => {
-    favoriteSongs.value = songs
-  }).catch(() => {})
-  fetchUserPlaylists()
+  refreshOwnerData()
   fetchDiscoverPlaylists()
 })
 </script>
 
 <style lang="scss" scoped>
 .player-layout {
+  position: relative;
   width: 100%;
   height: 100%;
   display: flex;
   align-items: center;
   overflow: hidden;
+  // 竖向滚动交给浏览器，横向手势交给侧栏开合
+  touch-action: pan-y;
 
   .player-stage-container {
     position: relative;
@@ -419,7 +472,9 @@ onMounted(async () => {
     flex: 1;
     flex-direction: column;
     height: 100%;
+    min-width: 0;
     min-height: 0;
+    overflow: hidden;
   }
 
   // 背景层：PlayerStage absolute 铺满 + 延伸进安全区

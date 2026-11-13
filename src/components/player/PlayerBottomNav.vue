@@ -100,11 +100,14 @@ function onItemClick(tab: string) {
     display: flex;
     align-items: center;
     justify-content: center;
+    min-width: 0;
+    overflow: hidden;
     height: 100%;
     cursor: pointer;
 
     .nav-label {
       font-size: 15px;
+      white-space: nowrap;
       color: var(--theme-text, #fff);
       opacity: 0.6;
       transition:

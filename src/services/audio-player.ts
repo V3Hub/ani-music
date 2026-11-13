@@ -8,7 +8,7 @@ import type { Song } from '@/types/music'
  *  - 进度、时长、播放状态由 audio 事件驱动，避免定时器漂移
  *  - 组件只与 Pinia store 响应式引用绑定，不直接操作 audio
  */
-import { reportPlay } from '@/api/music'
+import { addSongToPlayRecord, reportPlay } from '@/api/music'
 import { usePlayerStore } from '@/stores/player'
 import { watch } from 'vue'
 
@@ -52,6 +52,7 @@ function bindEvents() {
   // 开始播放（含恢复播放）：置为播放态，切换按钮图标与唱片动画
   audio.addEventListener('play', () => {
     playerStore.setPlaying(true)
+    recordPlayHistory()
   })
 
   // 暂停（含切歌、锁屏暂停）：置为暂停态
@@ -93,6 +94,20 @@ function bindEvents() {
   audio.addEventListener('loadstart', () => {
     playerStore.setBuffered(0)
     playerStore.setCanplay(false)
+  })
+}
+
+/** 已写入播放历史的歌曲 id，避免同一首暂停/恢复时重复上报 */
+let lastRecordedSongId: number | string | null = null
+
+/** 写入播放历史：真正开始播放时上报一次，失败静默并允许下次重试 */
+function recordPlayHistory() {
+  const song = playerStore.currentSong
+  if (!song || song.id === lastRecordedSongId)
+    return
+  lastRecordedSongId = song.id
+  addSongToPlayRecord(song.id).catch(() => {
+    lastRecordedSongId = null
   })
 }
 

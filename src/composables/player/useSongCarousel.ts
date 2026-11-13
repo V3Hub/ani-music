@@ -38,12 +38,20 @@ export function useSongCarousel() {
   /** 用户手动滑动结束 → 播放对应歌曲 */
   async function onSlideChange(swiper: any) {
     if (!swiperReady.value) return
+    // 只响应用户手势触发的切换，程序化的 slideTo 不切歌
     if (!hasUserTouch.value) return
+    hasUserTouch.value = false
     if (switchingLock) return
     if (!playList.value.length) return
-    switchingLock = true
+
     const targetIdx = swiper.realIndex as number
     swiperIndex.value = targetIdx
+    const target = playList.value[targetIdx]
+    // 滑到的就是当前播放的歌：只同步高亮，不重复加载
+    if (!target || target.id === currentSong.value?.id)
+      return
+
+    switchingLock = true
     await playByIndex(targetIdx)
     setTimeout(() => {
       switchingLock = false
@@ -63,10 +71,19 @@ export function useSongCarousel() {
     }
   })
 
-  /** 列表增减（如搜索加入新歌）后刷新轮播，避免 virtual 渲染空白 */
+  /** 列表增减（如搜索加入新歌）后刷新轮播，并重新对齐到当前歌曲 */
   watch(() => playList.value.length, async () => {
     await nextTick()
-    swiperRef.value?.update()
+    const swiper = swiperRef.value
+    if (!swiper) return
+    swiper.update()
+    const idx = playList.value.findIndex((song: Song) => song.id === currentSong.value?.id)
+    if (idx < 0) return
+    if (swiper.params.loop)
+      swiper.slideToLoop(idx, 0)
+    else
+      swiper.slideTo(idx, 0)
+    swiperIndex.value = idx
   })
 
   return { swiperRef, swiperIndex, onSwiperReady, onSlideChange }

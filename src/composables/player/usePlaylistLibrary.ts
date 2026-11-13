@@ -35,6 +35,8 @@ export function usePlaylistLibrary({ favoriteSongs }: { favoriteSongs: Ref<Song[
   })
   const playlists = ref<PlaylistItem[]>([])
   const playHistory = ref<Song[]>([])
+  /** 历史播放封面缓存：刷新过程中即使新列表为空也保留原图 */
+  const historyCover = ref('')
   const activePlaylist = ref<PlaylistItem | null>(null)
   const activeSongs = ref<Song[]>([])
 
@@ -80,20 +82,31 @@ export function usePlaylistLibrary({ favoriteSongs }: { favoriteSongs: Ref<Song[
     })
   }
 
-  /** 打开「历史播放」 */
-  function openPlayHistory() {
-    const songs = playHistory.value
-    openContext({
-      playlist: {
-        id: 0,
-        name: '历史播放',
-        pic: songs[0]?.pic ?? '',
-        count: songs.length,
-        source: PlaylistSource.playRecord,
-        userToken: userToken.value,
-      },
-      songs,
-    })
+  /** 打开「历史播放」：先用现有数据打开，仅刷新歌曲列表，不动名称/封面 */
+  async function openPlayHistory() {
+    const buildContext = (songs: Song[]) => {
+      const pic = songs[0]?.pic || historyCover.value || ''
+      if (pic)
+        historyCover.value = pic
+      return {
+        playlist: {
+          id: 0,
+          name: '历史播放',
+          pic,
+          count: songs.length,
+          source: PlaylistSource.playRecord,
+          userToken: userToken.value,
+        },
+        songs,
+      }
+    }
+
+    // 立即打开（沿用上次的列表和封面），不在打开瞬间清空
+    openContext(buildContext(playHistory.value))
+
+    // 仅替换列表数据
+    await fetchPlayHistory()
+    openContext(buildContext(playHistory.value))
   }
 
   /** 打开用户创建/收藏的歌单：先弹出基础信息，再异步补全歌曲 */
@@ -151,6 +164,8 @@ export function usePlaylistLibrary({ favoriteSongs }: { favoriteSongs: Ref<Song[
       return
     }
     activeSongs.value = activeSongs.value.filter(song => song.id !== songId)
+    if (playlist.source === PlaylistSource.playRecord)
+      playHistory.value = playHistory.value.filter(song => song.id !== songId)
     showToast('已从列表移除')
   }
 
