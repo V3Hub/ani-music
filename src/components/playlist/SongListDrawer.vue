@@ -9,7 +9,7 @@
       <div class="detail-header">
         <van-icon name="arrow-left" size="20" class="header-icon" @click="visible = false" />
         <van-icon
-          v-if="activePlaylist?.source === PlaylistSource.playlist"
+          v-if="activePlaylist?.source === PlaylistSource.playlist || activePlaylist?.source === PlaylistSource.discover"
           name="ellipsis"
           size="20"
           class="header-icon header-more"
@@ -79,10 +79,12 @@
       v-model:visible="playlistActionVisible"
       :playlist="activePlaylist"
       :is-owner="isOwner"
-      :collected="activePlaylist?.source === PlaylistSource.playlist"
+      :collected="subscribed"
+      :share-count="playlistShareCount"
       @favorite="onPlaylistAction('add')"
       @unsubscribe="onPlaylistAction('remove')"
       @delete="onPlaylistAction('delete')"
+      @share="onPlaylistAction('share')"
     />
   </van-popup>
 </template>
@@ -94,13 +96,17 @@ import { playByIndex } from '@/services/audio-player'
 import { usePlayerStore } from '@/stores/player'
 import PlaylistActionSheet from '@/components/playlist/PlaylistActionSheet.vue'
 import WaveBox from '@/components/waveBox/WaveBox.vue'
+import { getPlaylistShareCount } from '@/api/music'
+import { sharePlaylist } from '@/utils/share'
 import { useSwipeClose } from '@/composables/useSwipeClose'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 const props = defineProps<{
   activePlaylist: PlaylistItem | null
   activeSongs: Song[]
   isOwner: boolean
+  /** 该歌单是否已收藏（含自己创建/已订阅） */
+  subscribed: boolean
 }>()
 
 const emit = defineEmits<{
@@ -116,7 +122,17 @@ const isPlaying = computed(() => player.isPlaying)
 
 const visible = ref(false)
 const playlistActionVisible = ref(false)
+const playlistShareCount = ref(0)
 const LOGO_URL = '/qs.svg'
+
+watch(() => props.activePlaylist?.id, (id) => {
+  playlistShareCount.value = 0
+  if (id == null)
+    return
+  getPlaylistShareCount(id).then(({ count }) => {
+    playlistShareCount.value = count
+  }).catch(() => {})
+}, { immediate: true })
 
 function open() {
   visible.value = true
@@ -133,6 +149,11 @@ function onPlaylistAction(val: string) {
   } else if (val === 'remove') {
     emit('removeSubPlaylist', props.activePlaylist?.id as number)
     visible.value = false
+  } else if (val === 'share') {
+    sharePlaylist(props.activePlaylist).then((count) => {
+      if (typeof count === 'number')
+        playlistShareCount.value = count
+    })
   }
 }
 
@@ -142,22 +163,10 @@ function onPlayAll() {
   playSongList()
 }
 
-/** 已在本次会话里自动收藏过的歌单，避免重复请求 */
-const autoSubscribedIds = new Set<number>()
-
-/** 播放发现页歌单时，自动收藏整个歌单 */
-function autoSubscribeIfNeeded() {
-  const playlist = props.activePlaylist
-  if (!playlist || playlist.source !== PlaylistSource.discover)
-    return
-  if (autoSubscribedIds.has(playlist.id))
-    return
-  autoSubscribedIds.add(playlist.id)
-  emit('addSubPlaylist', playlist.id)
-}
-
 async function playSongList(id?: string | number) {
-  autoSubscribeIfNeeded()
+  // 记录队列来源：波纹提示与听歌模式选中态都以它为准
+  const playlist = props.activePlaylist
+  player.setQueueSource(playlist ? { type: 'playlist', playlist } : null)
   player.setPlayList(props.activeSongs, 0)
   if (id !== undefined) {
     const idx = props.activeSongs.findIndex(song => song.id === id)

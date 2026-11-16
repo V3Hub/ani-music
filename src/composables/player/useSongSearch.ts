@@ -3,6 +3,7 @@
  */
 import type { Song } from '@/types/music'
 import { addSearchSong, searchSongs } from '@/api/music'
+import { getPlaybackSource } from '@/composables/player/usePlaybackSource'
 import { playByIndex } from '@/services/audio-player'
 import { usePlayerStore } from '@/stores/player'
 import { showToast } from 'vant'
@@ -35,7 +36,7 @@ export function useSongSearch(keyword: Ref<string>, visible: Ref<boolean>) {
     if (state.loading) return
     state.loading = true
     state.searched = true
-    state.resultList = await searchSongs(kw)
+    state.resultList = await searchSongs(kw, getPlaybackSource())
     state.loading = false
   }
 
@@ -77,6 +78,7 @@ export function useSongSearch(keyword: Ref<string>, visible: Ref<boolean>) {
       index = searchList.value.length - 1
     }
     // 播放队列切换到搜索列表，后续点击继续往这个列表里加
+    player.setQueueSource(null)
     player.setPlayList([...searchList.value], index)
     await playByIndex(index)
     visible.value = false

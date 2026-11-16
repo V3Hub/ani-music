@@ -22,6 +22,7 @@ declare module 'vue' {
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     SongActionSheet: typeof import('./src/components/playlist/SongActionSheet.vue')['default']
+    SongCommentPopup: typeof import('./src/components/player/SongCommentPopup.vue')['default']
     SongListDrawer: typeof import('./src/components/playlist/SongListDrawer.vue')['default']
     SongSearchPopup: typeof import('./src/components/player/SongSearchPopup.vue')['default']
     VanEmpty: typeof import('vant/es')['Empty']

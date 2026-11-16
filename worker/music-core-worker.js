@@ -187,7 +187,17 @@ const ROUTES = {
   '/api/playlist/sort-song': { POST: handleSortPlaylistSongs },
   '/api/playlist/remove-song': { POST: handleRemovePlaylistSong },
   '/api/playlist/discover': { GET: handleGetDiscoverPlaylists },
+  '/api/playlist/search': { GET: handleSearchPlaylists },
+  '/api/playlist/info': { GET: handleGetPlaylistInfo },
+  '/api/share/token': { GET: handleCreateShareToken },
+  '/api/share/resolve': { GET: handleResolveShareToken },
   '/api/song/detail': { GET: handleGetSongDetail },
+  '/api/song/share': { GET: handleGetSongShareCount, POST: handleReportSongShare },
+  '/api/song/comment': { GET: handleGetComments, POST: handleAddComment },
+  '/api/song/comment/count': { GET: handleGetCommentCount },
+  '/api/song/comment/like': { POST: handleToggleCommentLike },
+  '/api/song/comment/delete': { POST: handleDeleteComment },
+  '/api/playlist/share': { GET: handleGetPlaylistShareCount, POST: handleReportPlaylistShare },
   '/api/song/theme-color': { GET: handleGetSongThemeColor },
   '/api/song/meta': { POST: handleUpdateSongMeta },
 }
@@ -1023,6 +1033,418 @@ async function handleGetDiscoverPlaylists(request, env) {
     .all()
   results.forEach(item => (item.owner = Boolean(item.owner)))
   return jsonResp({ code: 200, msg: '获取发现歌单列表成功', data: results })
+}
+
+/** 搜索歌单 GET /api/playlist/search?keyword=xx：仅按歌单名称模糊匹配，最多返回 30 条 */
+async function handleSearchPlaylists(request, env) {
+  const userId = getRequestUserId(request)
+  const keyword = (new URL(request.url).searchParams.get('keyword') || '').trim()
+  if (!keyword) {
+    return jsonResp({ code: 200, msg: '搜索歌单成功', data: [] })
+  }
+  const DB = env.DB
+  const { results } = await DB.prepare(
+    `
+    SELECT
+      p.*,
+      COALESCE(sub.subscribe_count, 0) + 1 AS subscribe_count,
+      CASE WHEN p.user_id = ? THEN 1 ELSE 0 END AS owner,
+      (
+        SELECT songs.cover_url
+        FROM playlist_song ps
+        LEFT JOIN songs ON ps.song_id = songs.id
+        WHERE ps.playlist_id = p.id
+        ORDER BY ps.sort
+        LIMIT 1
+      ) as pic,
+      (
+        SELECT COUNT(*)
+        FROM playlist_song ps
+        WHERE ps.playlist_id = p.id
+      ) as count
+    FROM user_playlist p
+    LEFT JOIN (
+      SELECT playlist_id, COUNT(*) AS subscribe_count
+      FROM user_playlist_sub
+      GROUP BY playlist_id
+    ) sub ON p.id = sub.playlist_id
+    WHERE p.name LIKE ?
+    ORDER BY subscribe_count DESC, p.create_time DESC
+    LIMIT 30
+  `,
+  )
+    .bind(userId, `%${keyword}%`)
+    .all()
+  results.forEach(item => (item.owner = Boolean(item.owner)))
+  return jsonResp({ code: 200, msg: '搜索歌单成功', data: results })
+}
+
+/** 歌单信息 GET /api/playlist/info?id=xx：分享链接打开时使用，返回单条歌单信息 */
+async function handleGetPlaylistInfo(request, env) {
+  const userId = getRequestUserId(request)
+  const id = Number(new URL(request.url).searchParams.get('id'))
+  if (!id) {
+    return jsonResp({ code: 400, msg: '歌单不存在' })
+  }
+  const DB = env.DB
+  const { results } = await DB.prepare(
+    `
+    SELECT
+      p.*,
+      COALESCE(sub.subscribe_count, 0) + 1 AS subscribe_count,
+      CASE WHEN p.user_id = ? THEN 1 ELSE 0 END AS owner,
+      (
+        SELECT songs.cover_url
+        FROM playlist_song ps
+        LEFT JOIN songs ON ps.song_id = songs.id
+        WHERE ps.playlist_id = p.id
+        ORDER BY ps.sort
+        LIMIT 1
+      ) as pic,
+      (
+        SELECT COUNT(*)
+        FROM playlist_song ps
+        WHERE ps.playlist_id = p.id
+      ) as count
+    FROM user_playlist p
+    LEFT JOIN (
+      SELECT playlist_id, COUNT(*) AS subscribe_count
+      FROM user_playlist_sub
+      GROUP BY playlist_id
+    ) sub ON p.id = sub.playlist_id
+    WHERE p.id = ?
+  `,
+  )
+    .bind(userId, id)
+    .all()
+  const item = results[0]
+  if (!item) {
+    return jsonResp({ code: 404, msg: '歌单不存在' })
+  }
+  item.owner = Boolean(item.owner)
+  return jsonResp({ code: 200, msg: '获取歌单信息成功', data: item })
+}
+
+/**
+ * 分享 token：6 位 base62 短码
+ * 前 4 位承载「id * 2 + 类型」，后 2 位是 HMAC 校验位
+ * 校验位由 SECRET_KEY 派生，保证链接无法被随意枚举，同时长度保持简短
+ */
+const SHARE_ALPHABET = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+const SHARE_PAYLOAD_LEN = 4
+const SHARE_SIG_LEN = 2
+const SHARE_PAYLOAD_SPACE = 62 ** SHARE_PAYLOAD_LEN
+const SHARE_SIG_SPACE = 62 ** SHARE_SIG_LEN
+const SHARE_TOKEN_PATTERN = new RegExp(`^[0-9A-Z]{${SHARE_PAYLOAD_LEN + SHARE_SIG_LEN}}$`, 'i')
+
+function encodeBase62(num, length) {
+  let rest = num
+  let result = ''
+  while (rest > 0) {
+    result = SHARE_ALPHABET[rest % 62] + result
+    rest = Math.floor(rest / 62)
+  }
+  return result.padStart(length, '0')
+}
+
+async function getShareHmacKey() {
+  // 与登录 token 共用 SECRET_KEY，加后缀做用途隔离
+  return crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(`${SECRET_KEY}:share`),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  )
+}
+
+async function signSharePayload(key, payload) {
+  const signature = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload))
+  const bytes = new Uint8Array(signature)
+  const num = ((bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes[3]) >>> 0
+  return encodeBase62(num % SHARE_SIG_SPACE, SHARE_SIG_LEN)
+}
+
+async function createShareToken(type, id) {
+  // 末位区分类型，song / playlist 互不通用
+  const value = id * 2 + (type === 'playlist' ? 1 : 0)
+  if (value <= 0 || value >= SHARE_PAYLOAD_SPACE)
+    return null
+  const payload = encodeBase62(value, SHARE_PAYLOAD_LEN)
+  const key = await getShareHmacKey()
+  return payload + (await signSharePayload(key, payload))
+}
+
+async function parseShareToken(token) {
+  if (!token || !SHARE_TOKEN_PATTERN.test(token))
+    return null
+  const payload = token.slice(0, SHARE_PAYLOAD_LEN)
+  const key = await getShareHmacKey()
+  if ((await signSharePayload(key, payload)) !== token.slice(SHARE_PAYLOAD_LEN))
+    return null
+  let value = 0
+  for (const char of payload) {
+    const index = SHARE_ALPHABET.indexOf(char)
+    if (index < 0)
+      return null
+    value = value * 62 + index
+  }
+  const id = Math.floor(value / 2)
+  if (!id)
+    return null
+  return { type: value % 2 ? 'playlist' : 'song', id }
+}
+
+/** 生成分享 token GET /api/share/token?type=song&id=1 */
+async function handleCreateShareToken(request) {
+  const url = new URL(request.url)
+  const type = url.searchParams.get('type')
+  const id = Number(url.searchParams.get('id'))
+  if ((type !== 'song' && type !== 'playlist') || !id) {
+    return jsonResp({ code: 400, msg: '参数错误' })
+  }
+  const token = await createShareToken(type, id)
+  if (!token) {
+    return jsonResp({ code: 400, msg: '分享 id 超出范围' })
+  }
+  return jsonResp({ code: 200, msg: '获取分享 token 成功', data: { token } })
+}
+
+/** 解析分享 token GET /api/share/resolve?token=xx */
+async function handleResolveShareToken(request) {
+  const token = new URL(request.url).searchParams.get('token') || ''
+  const parsed = await parseShareToken(token)
+  if (!parsed) {
+    return jsonResp({ code: 400, msg: '分享链接无效或已失效' })
+  }
+  return jsonResp({ code: 200, msg: '解析分享 token 成功', data: parsed })
+}
+
+/**
+ * 分享人数统计表（需手动执行建表 SQL）：
+ * 歌曲与歌单共用一张表，target_type 区分 song / playlist，
+ * 按 (类型, id, user_id) 去重，一个用户分享同一条内容只算一人
+ */
+
+/** 查询歌曲分享人数 GET /api/song/share?id=1 */
+async function handleGetSongShareCount(request, env) {
+  const id = Number(new URL(request.url).searchParams.get('id'))
+  if (!id) {
+    return jsonResp({ code: 400, msg: '参数错误' })
+  }
+  const row = await env.DB.prepare('SELECT COUNT(*) AS count FROM share_user WHERE target_type = \'song\' AND target_id = ?').bind(id).first()
+  return jsonResp({ code: 200, msg: '获取分享人数成功', data: { count: row?.count || 0 } })
+}
+
+/** 记录一次分享 POST /api/song/share { id }：返回最新分享人数 */
+async function handleReportSongShare(request, env) {
+  const userId = getRequestUserId(request)
+  const body = await request.json().catch(() => ({}))
+  const id = Number(body && body.id)
+  if (!id) {
+    return jsonResp({ code: 400, msg: '参数错误' })
+  }
+  await env.DB.prepare('INSERT OR IGNORE INTO share_user (target_type, target_id, user_id, create_time) VALUES (\'song\', ?, ?, ?)')
+    .bind(id, String(userId), Date.now())
+    .run()
+  const row = await env.DB.prepare('SELECT COUNT(*) AS count FROM share_user WHERE target_type = \'song\' AND target_id = ?').bind(id).first()
+  return jsonResp({ code: 200, msg: '分享记录成功', data: { count: row?.count || 0 } })
+}
+
+/** 查询歌单分享人数 GET /api/playlist/share?id=1 */
+async function handleGetPlaylistShareCount(request, env) {
+  const id = Number(new URL(request.url).searchParams.get('id'))
+  if (!id) {
+    return jsonResp({ code: 400, msg: '参数错误' })
+  }
+  const row = await env.DB.prepare('SELECT COUNT(*) AS count FROM share_user WHERE target_type = \'playlist\' AND target_id = ?').bind(id).first()
+  return jsonResp({ code: 200, msg: '获取分享人数成功', data: { count: row?.count || 0 } })
+}
+
+/** 记录一次歌单分享 POST /api/playlist/share { id }：返回最新分享人数 */
+async function handleReportPlaylistShare(request, env) {
+  const userId = getRequestUserId(request)
+  const body = await request.json().catch(() => ({}))
+  const id = Number(body && body.id)
+  if (!id) {
+    return jsonResp({ code: 400, msg: '参数错误' })
+  }
+  await env.DB.prepare('INSERT OR IGNORE INTO share_user (target_type, target_id, user_id, create_time) VALUES (\'playlist\', ?, ?, ?)')
+    .bind(id, String(userId), Date.now())
+    .run()
+  const row = await env.DB.prepare('SELECT COUNT(*) AS count FROM share_user WHERE target_type = \'playlist\' AND target_id = ?').bind(id).first()
+  return jsonResp({ code: 200, msg: '分享记录成功', data: { count: row?.count || 0 } })
+}
+
+/**
+ * 歌曲评论表（需手动执行建表 SQL）：
+ * 回复统一挂在顶层评论下（parent_id 指向顶层），只保留一层结构
+ */
+const COMMENT_MAX_LENGTH = 500
+const COMMENT_PAGE_SIZE = 20
+
+function mapCommentRow(row, liked, currentUserId) {
+  return {
+    id: row.id,
+    songId: row.song_id,
+    userId: row.user_id,
+    content: row.content,
+    parentId: row.parent_id,
+    likeCount: row.like_count,
+    replyCount: row.reply_count || 0,
+    liked: !!liked,
+    mine: String(row.user_id) === String(currentUserId || ''),
+    createTime: row.create_time,
+  }
+}
+
+/** 评论列表 GET /api/song/comment?songId=&parentId=&sort=default|latest&page=&pageSize= */
+async function handleGetComments(request, env) {
+  const userId = String(getRequestUserId(request) || '')
+  const url = new URL(request.url)
+  const songId = Number(url.searchParams.get('songId'))
+  const parentId = Number(url.searchParams.get('parentId') || 0)
+  const sort = url.searchParams.get('sort') === 'latest' ? 'latest' : 'default'
+  const page = Math.max(1, Number(url.searchParams.get('page')) || 1)
+  const pageSize = Math.min(50, Math.max(1, Number(url.searchParams.get('pageSize')) || COMMENT_PAGE_SIZE))
+  if (!songId) {
+    return jsonResp({ code: 400, msg: '参数错误' })
+  }
+
+  const where = parentId ? 'c.song_id = ? AND c.parent_id = ?' : 'c.song_id = ? AND c.parent_id = 0'
+  const whereParams = parentId ? [songId, parentId] : [songId]
+  const order = sort === 'latest' ? 'c.create_time DESC' : 'c.like_count DESC, c.create_time DESC'
+  const sql = `SELECT c.*,
+      (SELECT COUNT(*) FROM song_comment r WHERE r.parent_id = c.id) AS reply_count,
+      EXISTS(SELECT 1 FROM song_comment_like l WHERE l.comment_id = c.id AND l.user_id = ?) AS liked
+    FROM song_comment c
+    WHERE ${where}
+    ORDER BY ${order}
+    LIMIT ? OFFSET ?`
+  const { results } = await env.DB.prepare(sql)
+    .bind(userId, ...whereParams, pageSize, (page - 1) * pageSize)
+    .all()
+  return jsonResp({
+    code: 200,
+    msg: '获取评论成功',
+    data: (results || []).map(row => mapCommentRow(row, row.liked, userId)),
+  })
+}
+
+/** 评论总数 GET /api/song/comment/count?songId=1（含回复） */
+async function handleGetCommentCount(request, env) {
+  const songId = Number(new URL(request.url).searchParams.get('songId'))
+  if (!songId) {
+    return jsonResp({ code: 400, msg: '参数错误' })
+  }
+  const row = await env.DB.prepare('SELECT COUNT(*) AS count FROM song_comment WHERE song_id = ?').bind(songId).first()
+  return jsonResp({ code: 200, msg: '获取评论数成功', data: { count: row?.count || 0 } })
+}
+
+/** 发布评论 POST /api/song/comment { songId, content, parentId? } */
+async function handleAddComment(request, env) {
+  const userId = getRequestUserId(request)
+  if (!userId) {
+    return jsonResp({ code: 401, msg: '登录后才能评论' }, 401)
+  }
+  const body = await request.json().catch(() => ({}))
+  const songId = Number(body.songId)
+  const content = String(body.content || '').trim()
+  let parentId = Number(body.parentId) || 0
+  if (!songId || !content) {
+    return jsonResp({ code: 400, msg: '评论内容不能为空' })
+  }
+  if (content.length > COMMENT_MAX_LENGTH) {
+    return jsonResp({ code: 400, msg: `评论最多 ${COMMENT_MAX_LENGTH} 字` })
+  }
+  if (parentId) {
+    const parent = await env.DB.prepare('SELECT id, song_id, parent_id FROM song_comment WHERE id = ?').bind(parentId).first()
+    if (!parent || parent.song_id !== songId) {
+      return jsonResp({ code: 400, msg: '回复的评论不存在' })
+    }
+    // 二级回复归到顶层，保持一层结构
+    parentId = parent.parent_id || parentId
+  }
+
+  const now = Date.now()
+  const result = await env.DB.prepare(
+    'INSERT INTO song_comment (song_id, user_id, content, parent_id, like_count, create_time) VALUES (?, ?, ?, ?, 0, ?)',
+  ).bind(songId, String(userId), content, parentId, now).run()
+  return jsonResp({
+    code: 200,
+    msg: '评论成功',
+    data: {
+      id: result.meta?.last_row_id,
+      songId,
+      userId: String(userId),
+      content,
+      parentId,
+      likeCount: 0,
+      replyCount: 0,
+      liked: false,
+      mine: true,
+      createTime: now,
+    },
+  })
+}
+
+/** 点赞 / 取消点赞 POST /api/song/comment/like { id } */
+async function handleToggleCommentLike(request, env) {
+  const userId = getRequestUserId(request)
+  if (!userId) {
+    return jsonResp({ code: 401, msg: '登录后才能点赞' }, 401)
+  }
+  const body = await request.json().catch(() => ({}))
+  const id = Number(body.id)
+  if (!id) {
+    return jsonResp({ code: 400, msg: '参数错误' })
+  }
+  const comment = await env.DB.prepare('SELECT id FROM song_comment WHERE id = ?').bind(id).first()
+  if (!comment) {
+    return jsonResp({ code: 404, msg: '评论不存在' }, 404)
+  }
+
+  const likedRow = await env.DB.prepare('SELECT 1 AS liked FROM song_comment_like WHERE comment_id = ? AND user_id = ?')
+    .bind(id, String(userId))
+    .first()
+  if (likedRow) {
+    await env.DB.prepare('DELETE FROM song_comment_like WHERE comment_id = ? AND user_id = ?').bind(id, String(userId)).run()
+  } else {
+    await env.DB.prepare('INSERT OR IGNORE INTO song_comment_like (comment_id, user_id) VALUES (?, ?)').bind(id, String(userId)).run()
+  }
+
+  const countRow = await env.DB.prepare('SELECT COUNT(*) AS count FROM song_comment_like WHERE comment_id = ?').bind(id).first()
+  const likeCount = countRow?.count || 0
+  // 同步冗余计数，供「默认」排序使用
+  await env.DB.prepare('UPDATE song_comment SET like_count = ? WHERE id = ?').bind(likeCount, id).run()
+  return jsonResp({ code: 200, msg: '操作成功', data: { liked: !likedRow, likeCount } })
+}
+
+/** 删除自己的评论 POST /api/song/comment/delete { id }：连同其回复一并删除 */
+async function handleDeleteComment(request, env) {
+  const userId = getRequestUserId(request)
+  if (!userId) {
+    return jsonResp({ code: 401, msg: '登录后才能删除评论' }, 401)
+  }
+  const body = await request.json().catch(() => ({}))
+  const id = Number(body.id)
+  if (!id) {
+    return jsonResp({ code: 400, msg: '参数错误' })
+  }
+  const comment = await env.DB.prepare('SELECT id, user_id FROM song_comment WHERE id = ?').bind(id).first()
+  if (!comment) {
+    return jsonResp({ code: 404, msg: '评论不存在' }, 404)
+  }
+  if (String(comment.user_id) !== String(userId)) {
+    return jsonResp({ code: 403, msg: '只能删除自己的评论' }, 403)
+  }
+
+  // 先清理点赞记录（含子回复），再删评论与回复
+  await env.DB.prepare(
+    'DELETE FROM song_comment_like WHERE comment_id = ? OR comment_id IN (SELECT id FROM song_comment WHERE parent_id = ?)',
+  ).bind(id, id).run()
+  const result = await env.DB.prepare('DELETE FROM song_comment WHERE id = ? OR parent_id = ?').bind(id, id).run()
+  return jsonResp({ code: 200, msg: '删除成功', data: { count: result.meta?.changes || 0 } })
 }
 
 /** 歌曲详情 GET /api/song/detail?id=xx：返回统一 Song 字段 + 收藏状态 */

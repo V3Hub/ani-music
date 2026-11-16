@@ -27,7 +27,7 @@
       <ul class="playlist-list">
         <li @click="emit('openFavorite')">
           <div class="cover-wrap">
-            <div v-if="activePlaylist?.source === 'favorite'" class="wave-overlay">
+            <div v-if="playingPlaylist?.source === 'favorite'" class="wave-overlay">
               <WaveBox :playing="isPlaying" />
             </div>
             <van-image width="72" height="72" radius="8" fit="cover" :src="coverOf(favoriteSongs[0]?.pic)">
@@ -43,7 +43,7 @@
         </li>
         <li @click="emit('openHistory')">
           <div class="cover-wrap">
-            <div v-if="activePlaylist?.source === 'playRecord'" class="wave-overlay">
+            <div v-if="playingPlaylist?.source === 'playRecord'" class="wave-overlay">
               <WaveBox :playing="isPlaying" />
             </div>
             <van-image width="72" height="72" radius="8" fit="cover" :src="coverOf(playHistory[0]?.pic)">
@@ -64,7 +64,7 @@
         >
           <div class="cover-wrap">
             <div
-              v-if="activePlaylist?.source === 'playlist' && activePlaylist?.id === item.id"
+              v-if="playingPlaylist?.source === 'playlist' && playingPlaylist?.id === item.id"
               class="wave-overlay"
             >
               <WaveBox :playing="isPlaying" />
@@ -94,7 +94,8 @@ defineProps<{
   playlists: PlaylistItem[]
   playHistory: Song[]
   favoriteSongs: Song[]
-  activePlaylist: PlaylistItem | null
+  /** 当前队列所属歌单：只有它在播放时才显示波纹 */
+  playingPlaylist: PlaylistItem | null
   isPlaying: boolean
   /** 今日听歌时长文案 */
   listenTime: string

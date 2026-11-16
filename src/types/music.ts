@@ -57,6 +57,24 @@ export interface PlaylistItem {
   userToken?: string
 }
 
+/** 歌曲评论 */
+export interface SongComment {
+  id: number
+  songId: number
+  /** 评论者标识（后端由登录 token 生成） */
+  userId: string
+  content: string
+  /** 顶层评论为 0，回复为所属顶层评论 id */
+  parentId: number
+  likeCount: number
+  /** 回复数量（仅顶层评论有值） */
+  replyCount: number
+  liked: boolean
+  /** 是否是当前用户发布的评论 */
+  mine: boolean
+  createTime: number
+}
+
 /** 当前打开歌单的上下文（抽屉展示用） */
 export interface PlaylistContext {
   playlist: PlaylistItem | null

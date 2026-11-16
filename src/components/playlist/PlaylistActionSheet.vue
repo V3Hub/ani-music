@@ -23,7 +23,7 @@
             {{ playlist.name }}
           </div>
           <div class="head-owner">
-            @{{ playlist.userToken ?? 'guest' }}
+            @{{ playlist.userToken ?? 'guest' }} · {{ shareCount ?? 0 }} 人分享
           </div>
         </div>
       </div>
@@ -41,6 +41,10 @@
           <van-icon name="star-o" size="22" class="action-icon" />
           <span>收藏歌单</span>
         </button>
+        <button type="button" class="action-item" @click="emit('share')">
+          <van-icon name="share-o" size="22" class="action-icon" />
+          <span>分享歌单</span>
+        </button>
       </div>
     </div>
   </van-popup>
@@ -55,6 +59,8 @@ defineProps<{
   isOwner: boolean
   /** 是否是自己的收藏列表里的歌单（非本人创建） */
   collected?: boolean
+  /** 歌单分享人数 */
+  shareCount?: number
 }>()
 
 const emit = defineEmits<{
@@ -62,6 +68,7 @@ const emit = defineEmits<{
   (e: 'favorite'): void
   (e: 'unsubscribe'): void
   (e: 'delete'): void
+  (e: 'share'): void
 }>()
 
 const LOGO_URL = '/qs.svg'

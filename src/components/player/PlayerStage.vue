@@ -57,13 +57,13 @@
               />
               <span class="action-count">{{ song.favoriteCount ?? 0 }}</span>
             </div>
-            <div class="action-item">
+            <div class="action-item" @click="emit('openComment', song)">
               <van-icon name="chat-o" size="27" color="#FFFFFF" />
-              <span class="action-count">4</span>
+              <span class="action-count">{{ commentCounts[String(song.id)] ?? 0 }}</span>
             </div>
-            <div class="action-item">
+            <div class="action-item" @click="emit('share', song)">
               <van-icon name="share-o" size="27" color="#FFFFFF" />
-              <span class="action-count">28</span>
+              <span class="action-count">{{ shareCounts[String(song.id)] ?? 0 }}</span>
             </div>
             <div class="action-right">
               <button type="button" class="listen-btn">免费听</button>
@@ -116,10 +116,12 @@ import { Swiper, SwiperSlide } from 'swiper/vue'
 import 'swiper/css'
 import { ref, watch } from 'vue'
 
-const props = defineProps<{ favoriteSongs: Song[] }>()
+const props = defineProps<{ favoriteSongs: Song[], shareCounts: Record<string, number>, commentCounts: Record<string, number> }>()
 
 const emit = defineEmits<{
   (e: 'favorite', id?: string | number): void
+  (e: 'share', song: Song): void
+  (e: 'openComment', song: Song): void
   (e: 'openQueue'): void
 }>()
 

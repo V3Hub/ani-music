@@ -44,5 +44,12 @@ export function usePlaylistDiscovery() {
     }
   }
 
-  return { discoverPlaylists, fetchDiscoverPlaylists, buildDiscoverContext }
+  /** 播放搜索到的歌单后，把它插到发现页列表最前面（已在列表中则忽略） */
+  function insertDiscoverPlaylist(item: PlaylistItem) {
+    if (discoverPlaylists.value.some(playlist => playlist.id === item.id))
+      return
+    discoverPlaylists.value = [item, ...discoverPlaylists.value]
+  }
+
+  return { discoverPlaylists, fetchDiscoverPlaylists, buildDiscoverContext, insertDiscoverPlaylist }
 }

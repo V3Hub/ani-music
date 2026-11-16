@@ -16,7 +16,11 @@
         v-show="currentTab === 'music'"
         class="player-stage-absolute"
         :favorite-songs="favoriteSongs"
+        :share-counts="shareCounts"
+        :comment-counts="commentCounts"
         @favorite="onFavorite"
+        @share="onShareSong"
+        @open-comment="onOpenComment"
         @open-queue="queueVisible = true"
       />
       <!-- 前景层：工具栏 + 底栏，z-index 高于 PlayerStage -->
@@ -36,7 +40,7 @@
         :playlists="playlists"
         :play-history="playHistory"
         :favorite-songs="favoriteSongs"
-        :active-playlist="activePlaylist"
+        :playing-playlist="playingPlaylist"
         :is-playing="player.isPlaying"
         :listen-time="listenTimeText"
         @open-favorite="onOpenFavorite"
@@ -49,10 +53,9 @@
       <DiscoverPanel
         v-if="currentTab === 'discover'"
         :items="discoverPlaylists"
-        :active-playlist="activePlaylist"
+        :playing-playlist="playingPlaylist"
         :is-playing="player.isPlaying"
         @open="onOpenDiscover"
-        @search="searchVisible = true"
       />
 
       <WelfarePanel v-if="currentTab === 'benefit'" />
@@ -78,7 +81,7 @@
       v-model:visible="queueVisible"
       :play-mode="playMode"
       @toggle-play-mode="togglePlayMode"
-      @share="shareCurrentSong"
+      @share="onShareSong(player.currentSong)"
       @remove-song="removeSong"
       @open-add-to-playlist="openAddToPlaylistFromQueue"
     />
@@ -88,6 +91,7 @@
       :active-playlist="activePlaylist"
       :active-songs="activeSongs"
       :is-owner="activePlaylistIsOwner"
+      :subscribed="activePlaylistSubscribed"
       @more="onOpenSongActions"
       @delete-playlist="deletePlaylist"
       @add-sub-playlist="savePlaylist"
@@ -116,6 +120,7 @@
       :can-delete="canDeleteActionSong"
       @favorite="onActionFavorite"
       @add-to-playlist="addToPlaylistVisible = true"
+      @share="onActionShare"
       @delete="onActionDelete"
     />
 
@@ -127,12 +132,18 @@
       @select="onSelectPlaylistTarget"
       @create="onCreatePlaylistFromSheet"
     />
+
+    <SongCommentPopup
+      v-model:visible="commentVisible"
+      :song="commentSong"
+      @count-change="onCommentCountChange"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import type { PlaylistItem, Song } from '@/types/music'
-import { addSongToFavorite, fetchSongs, getFavoriteList, getRecommendList, getSongDetail, removeSongFromFavorite } from '@/api/music'
+import { addSongToFavorite, fetchSongs, getFavoriteList, getPlaylistInfo, getRecommendList, getSongCommentCount, getSongDetail, getSongShareCount, removeSongFromFavorite, resolveShareToken } from '@/api/music'
 import { PlaylistSource } from '@/constants/playlist'
 import { showToast } from 'vant'
 import { useListeningMode } from '@/composables/player/useListeningMode'
@@ -144,8 +155,9 @@ import { usePlayerNavigation } from '@/composables/player/usePlayerNavigation'
 import { usePlaybackSource } from '@/composables/player/usePlaybackSource'
 import { useListenTimeStat } from '@/composables/useListenTimeStat'
 import { usePlayerStore } from '@/stores/player'
+import { shareSong } from '@/utils/share'
 import { play } from '@/services/audio-player'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import DiscoverPanel from '@/components/discover/DiscoverPanel.vue'
 import ListeningModeSidebar from '@/components/player/ListeningModeSidebar.vue'
 import PlaybackQueuePopup from '@/components/player/PlaybackQueuePopup.vue'
@@ -154,6 +166,7 @@ import PlayerSettingsPopup from '@/components/player/PlayerSettingsPopup.vue'
 import PlayerStage from '@/components/player/PlayerStage.vue'
 import PlayerToolbar from '@/components/player/PlayerToolbar.vue'
 import SongSearchPopup from '@/components/player/SongSearchPopup.vue'
+import SongCommentPopup from '@/components/player/SongCommentPopup.vue'
 import SongListDrawer from '@/components/playlist/SongListDrawer.vue'
 import CreatePlaylistPopup from '@/components/playlist/CreatePlaylistPopup.vue'
 import SongActionSheet from '@/components/playlist/SongActionSheet.vue'
@@ -176,6 +189,30 @@ const keyword = ref('')
 const sleepVisible = ref(false)
 
 const favoriteSongs = ref<Song[]>([])
+
+/** 歌曲分享人数缓存：歌曲 id -> 人数，切歌时按需拉取 */
+const shareCounts = ref<Record<string, number>>({})
+
+/** 歌曲评论数缓存：歌曲 id -> 评论数，切歌时按需拉取 */
+const commentCounts = ref<Record<string, number>>({})
+const commentVisible = ref(false)
+const commentSong = ref<Song | null>(null)
+
+watch(() => player.currentSong?.id, (id) => {
+  if (id == null)
+    return
+  const key = String(id)
+  if (shareCounts.value[key] == null) {
+    getSongShareCount(id).then(({ count }) => {
+      shareCounts.value[key] = count
+    }).catch(() => {})
+  }
+  if (commentCounts.value[key] == null) {
+    getSongCommentCount(id).then(({ count }) => {
+      commentCounts.value[key] = count
+    }).catch(() => {})
+  }
+}, { immediate: true })
 
 // ========== 组合业务模块 ==========
 const { currentTab, navList, navigate } = usePlayerNavigation()
@@ -224,13 +261,25 @@ const {
   removeSavedPlaylist,
 } = usePlaylistLibrary({ favoriteSongs })
 
-const { discoverPlaylists, fetchDiscoverPlaylists, buildDiscoverContext } = usePlaylistDiscovery()
+const { discoverPlaylists, fetchDiscoverPlaylists, buildDiscoverContext, insertDiscoverPlaylist } = usePlaylistDiscovery()
+
+/** 播放搜索到的发现页歌单后，把它插入发现页列表 */
+watch(() => player.queueSource, (source) => {
+  if (source?.type !== 'playlist' || source.playlist.source !== 'discover')
+    return
+  insertDiscoverPlaylist(source.playlist)
+})
+
+/** 当前打开的歌单是否已收藏（自己创建的或已订阅），已收藏则播放时不再自动收藏 */
+const activePlaylistSubscribed = computed(() => {
+  const id = activePlaylist.value?.id
+  return !!id && playlists.value.some(item => item.id === id)
+})
 
 const {
   playMode,
   togglePlayMode,
   removeSong,
-  shareCurrentSong,
 } = usePlayQueue()
 
 // ========== 导航与数据加载 ==========
@@ -256,21 +305,34 @@ function onNavigate(tab: string) {
 // ========== 听歌模式 ==========
 const switchingMode = ref(false)
 
+/** 当前队列所属歌单（只有队列来自歌单时用于波纹提示，与「打开了哪个歌单」无关） */
+const playingPlaylist = computed(() =>
+  player.queueSource?.type === 'playlist' ? player.queueSource.playlist : null,
+)
+
+/** 队列来源不是听歌模式（播放歌单 / 搜索列表）时，取消模式的选中态 */
+watch(() => player.queueSource, (source) => {
+  currentMode.value = source?.type === 'mode' ? source.mode : ''
+}, { immediate: true })
+
 /** 选择任意模式/场景：统一换成最热歌曲歌单并播放 */
 async function onSelectMode(mode: string) {
-  currentMode.value = mode
   if (switchingMode.value)
     return
   switchingMode.value = true
+  const prevSource = player.queueSource
+  // 先占位高亮，失败时回滚到播放前的来源
+  player.setQueueSource({ type: 'mode', mode })
   try {
     const songs = await getRecommendList()
     if (!songs.length) {
+      player.setQueueSource(prevSource)
       showToast('暂时没有推荐歌曲')
       return
     }
     await play(songs[0], songs)
-    showToast('已切换到最热歌曲')
   } catch (err) {
+    player.setQueueSource(prevSource)
     console.warn('[mode] 获取最热歌曲失败', err)
     showToast('获取最热歌曲失败，请重试')
   } finally {
@@ -352,6 +414,33 @@ function onActionDelete() {
   const song = actionSong.value
   if (song)
     removeSongFromActive(song.id)
+  songActionVisible.value = false
+}
+
+/** 分享单曲：成功后同步分享人数 */
+async function onShareSong(song: Song | null | undefined) {
+  if (!song)
+    return
+  const count = await shareSong(song)
+  if (typeof count === 'number')
+    shareCounts.value[String(song.id)] = count
+}
+
+/** 打开评论弹层 */
+function onOpenComment(song: Song) {
+  commentSong.value = song
+  commentVisible.value = true
+}
+
+/** 评论数变化时同步到播放页 */
+function onCommentCountChange(count: number) {
+  if (commentSong.value)
+    commentCounts.value[String(commentSong.value.id)] = count
+}
+
+/** 分享当前操作的单曲 */
+function onActionShare() {
+  onShareSong(actionSong.value)
   songActionVisible.value = false
 }
 
@@ -460,12 +549,58 @@ function onFavorite(id?: string | number) {
 
 onMounted(async () => {
   if (player.playList.length === 0) {
+    // 首屏播放的是最热歌曲，对应「默认模式」，进入页面即选中（不等接口返回）
+    player.setQueueSource({ type: 'mode', mode: 'default' })
     const songs = await fetchSongs()
     player.setPlayList(songs, 0)
   }
   refreshOwnerData()
   fetchDiscoverPlaylists()
+  handleShareLink()
 })
+
+/** 处理分享链接：/song/<token> 播放单曲；/playlist/<token> 打开歌单（可收藏） */
+async function handleShareLink() {
+  const pathMatch = window.location.pathname.match(/^\/(song|playlist)\/([\w-]+)\/?$/)
+  const params = new URLSearchParams(window.location.search)
+  const type = pathMatch ? pathMatch[1] : params.get('share')
+  const rawId = pathMatch ? pathMatch[2] : params.get('id')
+  if (!type || !rawId)
+    return
+
+  // 处理完立即回到首页，避免刷新后重复触发
+  window.history.replaceState(null, '', '/')
+
+  try {
+    let shareType = type
+    let id = rawId
+    // 非纯数字视为加密 token，解析出真实类型与 id
+    if (!/^\d+$/.test(rawId)) {
+      const resolved = await resolveShareToken(rawId)
+      shareType = resolved.type
+      id = String(resolved.id)
+    }
+
+    if (shareType === 'song') {
+      const song = await getSongDetail(id)
+      if (!song?.id) {
+        showToast('分享的歌曲不存在')
+        return
+      }
+      player.setQueueSource(null)
+      await play(song, [song])
+    } else if (shareType === 'playlist') {
+      const item = await getPlaylistInfo(id)
+      if (!item?.id) {
+        showToast('分享的歌单不存在')
+        return
+      }
+      await onOpenDiscover(item)
+    }
+  } catch {
+    showToast('分享链接无效或已失效')
+  }
+}
 </script>
 
 <style lang="scss" scoped>

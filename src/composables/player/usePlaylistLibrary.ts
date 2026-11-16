@@ -208,6 +208,8 @@ export function usePlaylistLibrary({ favoriteSongs }: { favoriteSongs: Ref<Song[
   async function savePlaylist(id: number) {
     const ok = await createSubPlaylist(id)
     showToast(ok ? '已收藏该歌单' : '收藏失败')
+    if (ok)
+      await fetchUserPlaylists()
   }
 
   /** 取消收藏歌单 */

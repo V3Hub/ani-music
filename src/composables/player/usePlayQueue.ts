@@ -4,6 +4,7 @@
 import type { Song } from '@/types/music'
 import { pause, playByIndex } from '@/services/audio-player'
 import { usePlayerStore } from '@/stores/player'
+import { shareSong } from '@/utils/share'
 import { showToast } from 'vant'
 import { computed, ref } from 'vue'
 
@@ -51,13 +52,7 @@ export function usePlayQueue() {
 
   /** 复制当前歌曲分享链接 */
   async function shareCurrentSong() {
-    const url = `https://ain-music.local/share/${btoa(String(player.currentSong?.id ?? ''))}`
-    try {
-      await navigator.clipboard.writeText(url)
-      showToast('分享链接复制成功')
-    } catch {
-      showToast(url)
-    }
+    await shareSong(player.currentSong)
   }
 
   return {

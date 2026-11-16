@@ -33,6 +33,10 @@
           <van-icon name="music-o" size="22" class="action-icon" />
           <span>添加到歌单</span>
         </button>
+        <button type="button" class="action-item" @click="emit('share')">
+          <van-icon name="share-o" size="22" class="action-icon" />
+          <span>分享歌曲</span>
+        </button>
         <button v-if="canDelete" type="button" class="action-item" @click="emit('delete')">
           <van-icon name="delete-o" size="22" class="action-icon" />
           <span>删除</span>
@@ -56,6 +60,7 @@ const emit = defineEmits<{
   (e: 'update:visible', value: boolean): void
   (e: 'favorite'): void
   (e: 'addToPlaylist'): void
+  (e: 'share'): void
   (e: 'delete'): void
 }>()
 

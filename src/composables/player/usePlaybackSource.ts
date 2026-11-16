@@ -7,13 +7,28 @@ import { pause } from '@/services/audio-player'
 import { computed, onUnmounted, ref } from 'vue'
 
 const SLEEP_STORAGE_KEY = 'ani-music:sleep-minutes'
+const SOURCE_STORAGE_KEY = 'ani-music:playback-source'
 /** 定时关闭预设选项（分钟数；0 表示关闭） */
 export const SLEEP_OPTIONS = [0, 10, 20, 30, 60, 90]
 export const SLEEP_LABELS = ['关闭', '10 分钟', '20 分钟', '30 分钟', '60 分钟', '90 分钟', '自定义']
 
+/** 读取本地保存的播放源，非法值回退到 netease */
+function readStoredSource(): PlaybackSource {
+  const stored = localStorage.getItem(SOURCE_STORAGE_KEY)
+  return PLAYBACK_SOURCES.some(item => item.value === stored) ? stored as PlaybackSource : 'netease'
+}
+
+/** 当前播放源：模块级共享，搜索等其他模块可直接读取；变更时持久化，刷新后不丢失 */
+const playbackSource = ref<PlaybackSource>(readStoredSource())
+
+/** 供非组件模块（如搜索）读取当前播放源 */
+export function getPlaybackSource(): PlaybackSource {
+  return playbackSource.value
+}
+
 export function usePlaybackSource() {
   const settingsVisible = ref(false)
-  const source = ref<PlaybackSource>('netease')
+  const source = playbackSource
   const pickerVisible = ref(false)
 
   /** 定时关闭分钟数（0 = 关闭） */
@@ -62,7 +77,10 @@ export function usePlaybackSource() {
   /** 音源选择器确认（直接传 value） */
   function confirmSource(sourceValue: string) {
     const matched = PLAYBACK_SOURCES.find(item => item.value === sourceValue)
-    if (matched) source.value = matched.value
+    if (matched) {
+      source.value = matched.value
+      localStorage.setItem(SOURCE_STORAGE_KEY, matched.value)
+    }
     pickerVisible.value = false
   }
 

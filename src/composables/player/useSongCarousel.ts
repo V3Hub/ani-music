@@ -58,32 +58,34 @@ export function useSongCarousel() {
     }, 350)
   }
 
-  /** 播放器切歌 → 轮播跟随（slideToLoop） */
-  watch(currentSong, () => {
-    if (!swiperRef.value) return
+  /** 程序化切换到「当前播放歌曲」对应的 slide */
+  function syncToCurrent(duration: number) {
+    const swiper = swiperRef.value
+    if (!swiper) return
     const idx = playList.value.findIndex((song: Song) => song.id === currentSong.value?.id)
-    if (idx >= 0 && swiperIndex.value !== idx) {
-      // 列表过短时 loop 被关闭，只能用普通 slideTo
-      if (swiperRef.value.params.loop)
-        swiperRef.value.slideToLoop(idx, 300)
-      else
-        swiperRef.value.slideTo(idx, 300)
-    }
-  })
+    if (idx < 0) return
+    // 列表过短时 loop 被关闭，只能用普通 slideTo
+    if (swiper.params.loop)
+      swiper.slideToLoop(idx, duration)
+    else
+      swiper.slideTo(idx, duration)
+    swiperIndex.value = idx
+  }
 
-  /** 列表增减（如搜索加入新歌）后刷新轮播，并重新对齐到当前歌曲 */
-  watch(() => playList.value.length, async () => {
+  /** 播放器切歌 → 轮播跟随 */
+  watch(currentSong, () => syncToCurrent(300))
+
+  /**
+   * 歌单被整体替换（切换歌单、搜索加入新歌等）：
+   * v-for 的 slide 会被重建，Swiper 内部缓存仍是旧节点，必须等 DOM 更新后
+   * 先 update() 再对齐当前歌曲；只监听长度会漏掉「新旧歌单长度相同」的情况
+   */
+  watch(() => player.playList, async () => {
     await nextTick()
     const swiper = swiperRef.value
     if (!swiper) return
     swiper.update()
-    const idx = playList.value.findIndex((song: Song) => song.id === currentSong.value?.id)
-    if (idx < 0) return
-    if (swiper.params.loop)
-      swiper.slideToLoop(idx, 0)
-    else
-      swiper.slideTo(idx, 0)
-    swiperIndex.value = idx
+    syncToCurrent(0)
   })
 
   return { swiperRef, swiperIndex, onSwiperReady, onSlideChange }

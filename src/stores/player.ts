@@ -1,6 +1,9 @@
-import type { PlayMode, Song } from '@/types/music'
+import type { PlayMode, PlaylistItem, Song } from '@/types/music'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
+
+/** 当前播放队列的来源：听歌模式的最热歌曲，或某个歌单 */
+export type QueueSource = { type: 'mode', mode: string } | { type: 'playlist', playlist: PlaylistItem }
 
 export const usePlayerStore = defineStore('player', () => {
   // ------- state -------
@@ -15,6 +18,8 @@ export const usePlayerStore = defineStore('player', () => {
   const buffered = ref(0)
   /** 是否已可播放：canplay 后为 true，切歌/等待/出错时为 false；同时决定进度条能否拖动 */
   const canplay = ref(false)
+  /** 当前队列来源：用于听歌模式选中态与歌单波纹提示 */
+  const queueSource = ref<QueueSource | null>(null)
 
   // ------- computed -------
   const currentSong = computed<Song | null>(() => {
@@ -76,6 +81,10 @@ export const usePlayerStore = defineStore('player', () => {
     canplay.value = value
   }
 
+  function setQueueSource(source: QueueSource | null) {
+    queueSource.value = source
+  }
+
   function nextIndex(): number {
     if (playList.value.length === 0)
       return -1
@@ -105,6 +114,7 @@ export const usePlayerStore = defineStore('player', () => {
     playMode,
     buffered,
     canplay,
+    queueSource,
     // computed
     currentSong,
     progress,
@@ -119,6 +129,7 @@ export const usePlayerStore = defineStore('player', () => {
     setPlayMode,
     setBuffered,
     setCanplay,
+    setQueueSource,
     nextIndex,
     prevIndex,
   }

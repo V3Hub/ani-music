@@ -7,7 +7,7 @@
  *   - 响应 { code: 200, data } 由 unwrap 自动解包
  */
 import type { PlaybackSource } from '@/constants/player-ui'
-import type { LyricLine, PlaylistItem, Song } from '@/types/music'
+import type { LyricLine, PlaylistItem, Song, SongComment } from '@/types/music'
 import { request } from '@/utils/request'
 
 /**
@@ -239,6 +239,83 @@ export async function getPlaylistDiscover(): Promise<PlaylistItem[]> {
   return request.get<PlaylistItem[]>('/api/playlist/discover')
 }
 
+/** 搜索歌单（仅按歌单名称匹配） */
+export async function searchPlaylists(keyword: string): Promise<PlaylistItem[]> {
+  return request.get<PlaylistItem[]>('/api/playlist/search', { params: { keyword } })
+}
+
+/** 获取单个歌单信息（分享链接打开时使用） */
+export async function getPlaylistInfo(id: number | string): Promise<PlaylistItem> {
+  return request.get<PlaylistItem>('/api/playlist/info', { params: { id } })
+}
+
+/** 生成分享 token（加密后的 id，避免通过数字顺序刷取） */
+export async function createShareToken(type: 'song' | 'playlist', id: number | string): Promise<{ token: string }> {
+  return request.get<{ token: string }>('/api/share/token', { params: { type, id } })
+}
+
+/** 解析分享 token */
+export async function resolveShareToken(token: string): Promise<{ type: 'song' | 'playlist', id: number }> {
+  return request.get<{ type: 'song' | 'playlist', id: number }>('/api/share/resolve', { params: { token } })
+}
+
+/** 查询歌曲分享人数 */
+export async function getSongShareCount(id: number | string): Promise<{ count: number }> {
+  return request.get<{ count: number }>('/api/song/share', { params: { id } })
+}
+
+/** 记录一次分享，返回最新分享人数 */
+export async function reportSongShare(id: number | string): Promise<{ count: number }> {
+  return request.post<{ count: number }>('/api/song/share', { id })
+}
+
+/** 查询歌单分享人数 */
+export async function getPlaylistShareCount(id: number | string): Promise<{ count: number }> {
+  return request.get<{ count: number }>('/api/playlist/share', { params: { id } })
+}
+
+/** 记录一次歌单分享，返回最新分享人数 */
+export async function reportPlaylistShare(id: number | string): Promise<{ count: number }> {
+  return request.post<{ count: number }>('/api/playlist/share', { id })
+}
+
+// ==================== 评论 ====================
+
+/** 评论列表；传 parentId 时返回该顶层评论下的回复 */
+export async function getSongComments(params: {
+  songId: number | string
+  parentId?: number
+  sort?: 'default' | 'latest'
+  page?: number
+  pageSize?: number
+}): Promise<SongComment[]> {
+  return request.get<SongComment[]>('/api/song/comment', { params })
+}
+
+/** 歌曲评论总数（含回复） */
+export async function getSongCommentCount(songId: number | string): Promise<{ count: number }> {
+  return request.get<{ count: number }>('/api/song/comment/count', { params: { songId } })
+}
+
+/** 发布评论 / 回复 */
+export async function addSongComment(payload: {
+  songId: number | string
+  content: string
+  parentId?: number
+}): Promise<SongComment> {
+  return request.post<SongComment>('/api/song/comment', payload)
+}
+
+/** 点赞 / 取消点赞 */
+export async function toggleCommentLike(id: number): Promise<{ liked: boolean, likeCount: number }> {
+  return request.post<{ liked: boolean, likeCount: number }>('/api/song/comment/like', { id })
+}
+
+/** 删除自己的评论（连同回复），返回删除条数 */
+export async function deleteSongComment(id: number): Promise<{ count: number }> {
+  return request.post<{ count: number }>('/api/song/comment/delete', { id })
+}
+
 // ==================== 歌曲 ====================
 
 export async function getSongDetail(id: number | string): Promise<Song> {
@@ -317,7 +394,7 @@ export async function searchMusic(keyword: string, source: PlaybackSource): Prom
 /** fetchSongs 等价于 getRecommendList */
 export const fetchSongs = getRecommendList
 
-/** 单参数搜索，默认走 netease 源 */
-export async function searchSongs(keyword: string): Promise<Song[]> {
-  return searchMusic(keyword, 'netease')
+/** 搜索歌曲，按当前播放源请求对应音源 */
+export async function searchSongs(keyword: string, source: PlaybackSource = 'netease'): Promise<Song[]> {
+  return searchMusic(keyword, source)
 }

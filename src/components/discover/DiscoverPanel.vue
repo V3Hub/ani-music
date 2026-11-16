@@ -1,27 +1,34 @@
 <template>
   <div class="discover-panel">
-    <div class="search-bar" @click="emit('search')">
+    <div class="search-bar">
       <van-icon name="search" size="18" class="search-icon" />
-      <span class="search-placeholder">搜索歌曲、歌手、歌单</span>
+      <input
+        v-model="keyword"
+        class="search-input"
+        type="search"
+        placeholder="搜索歌单名称"
+        enterkeyhint="search"
+      >
+      <van-icon v-if="keyword" name="clear" size="16" class="search-clear" @click="keyword = ''" />
     </div>
 
-    <div v-if="items.length" class="playlist-grid">
+    <div v-if="displayItems.length" class="playlist-grid">
       <div
-        v-for="item in items"
+        v-for="item in displayItems"
         :key="item.id"
         class="grid-cell"
         @click="emit('open', item)"
       >
         <PlaylistCard
           :item="item"
-          :is-active="activePlaylist?.source === 'discover' && activePlaylist?.id === item.id"
+          :is-active="playingPlaylist?.source === 'discover' && playingPlaylist?.id === item.id"
           :is-playing="isPlaying"
         />
       </div>
     </div>
 
     <div v-else class="empty-tip">
-      暂无推荐歌单
+      {{ emptyTip }}
     </div>
   </div>
 </template>
@@ -29,17 +36,66 @@
 <script setup lang="ts">
 import type { PlaylistItem } from '@/types/music'
 import PlaylistCard from '@/components/playlist/PlaylistCard.vue'
+import { searchPlaylists } from '@/api/music'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
-defineProps<{
+const props = defineProps<{
   items: PlaylistItem[]
-  activePlaylist: PlaylistItem | null
+  /** 当前队列所属歌单：只有它在播放时才显示波纹 */
+  playingPlaylist: PlaylistItem | null
   isPlaying: boolean
 }>()
 
 const emit = defineEmits<{
   (e: 'open', item: PlaylistItem): void
-  (e: 'search'): void
 }>()
+
+const keyword = ref('')
+const results = ref<PlaylistItem[]>([])
+const searching = ref(false)
+let timer: ReturnType<typeof setTimeout> | undefined
+let requestSeq = 0
+
+/** 有关键词时显示搜索结果，否则显示推荐列表 */
+const displayItems = computed(() => keyword.value.trim() ? results.value : props.items)
+
+const emptyTip = computed(() => {
+  if (!keyword.value.trim())
+    return '暂无推荐歌单'
+  return searching.value ? '搜索中…' : '没有找到相关歌单'
+})
+
+/** 仅按歌单名称搜索，输入防抖 300ms */
+watch(keyword, (value) => {
+  if (timer)
+    clearTimeout(timer)
+  const kw = value.trim()
+  if (!kw) {
+    results.value = []
+    searching.value = false
+    return
+  }
+  searching.value = true
+  timer = setTimeout(async () => {
+    const seq = ++requestSeq
+    try {
+      const list = await searchPlaylists(kw)
+      if (seq === requestSeq)
+        results.value = list || []
+    } catch {
+      if (seq === requestSeq)
+        results.value = []
+    } finally {
+      if (seq === requestSeq)
+        searching.value = false
+    }
+  }, 300)
+})
+
+onBeforeUnmount(() => {
+  if (timer)
+    clearTimeout(timer)
+})
 </script>
 
 <style lang="scss" scoped>
@@ -61,19 +117,36 @@ const emit = defineEmits<{
   margin-bottom: 16px;
   border-radius: 20px;
   background: rgba(128, 128, 128, 0.16);
-  cursor: pointer;
 
   .search-icon {
     flex-shrink: 0;
     opacity: 0.55;
   }
 
-  .search-placeholder {
-    overflow: hidden;
+  .search-input {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    padding: 0;
+    border: none;
+    outline: none;
     font-size: 13px;
-    white-space: nowrap;
-    text-overflow: ellipsis;
+    color: inherit;
+    background: transparent;
+
+    &::placeholder {
+      opacity: 0.5;
+    }
+
+    &::-webkit-search-cancel-button {
+      display: none;
+    }
+  }
+
+  .search-clear {
+    flex-shrink: 0;
     opacity: 0.5;
+    cursor: pointer;
   }
 }
 

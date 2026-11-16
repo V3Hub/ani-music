@@ -21,11 +21,12 @@ export function useListeningMode() {
   const sceneList = computed(() => LISTENING_SCENES)
 
   const currentModeName = computed(() => {
-    if (!currentMode.value || currentMode.value === 'default')
+    // 空字符串表示当前队列不是听歌模式（播放歌单/搜索列表），显示占位文案
+    if (!currentMode.value)
       return DEFAULT_MODE_NAME
     return LISTENING_MODES.find(mode => mode.value === currentMode.value)?.label
       || LISTENING_SCENES.find(scene => scene.value === currentMode.value)?.label
-      || ''
+      || DEFAULT_MODE_NAME
   })
 
   /** 侧栏当前渲染宽度（px）：拖动过程中实时变化 */
