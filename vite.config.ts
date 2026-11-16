@@ -4,6 +4,7 @@ import { VantResolver } from '@vant/auto-import-resolver'
 import vue from '@vitejs/plugin-vue'
 import UnoCSS from 'unocss/vite'
 import Components from 'unplugin-vue-components/vite'
+import legacy from '@vitejs/plugin-legacy'
 import { defineConfig, loadEnv } from 'vite'
 
 export default defineConfig(({ mode }) => {
@@ -18,6 +19,14 @@ export default defineConfig(({ mode }) => {
         resolvers: [
           VantResolver(),
         ],
+      }),
+      // 兼容老电视/机顶盒浏览器：额外产出 nomodule 包 + core-js polyfill
+      legacy({
+        targets: ['chrome >= 49', 'chromeAndroid >= 49', 'safari >= 10', 'ios >= 10'],
+        // 现代包按“能识别 module 的最低版本”编译，避免 Chrome 64~79 / iOS 12 这类
+        // 支持 module 但不支持 ?. / ?? 的浏览器被误判为现代后解析失败白屏
+        modernTargets: 'chrome >= 64, chromeAndroid >= 64, edge >= 79, firefox >= 67, safari >= 12, ios >= 12',
+        renderLegacyChunks: true,
       }),
     ],
     resolve: {

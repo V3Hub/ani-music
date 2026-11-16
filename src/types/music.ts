@@ -30,10 +30,6 @@ export interface Song {
   lyricList?: LyricLine[]
   /** 歌曲主题色（hex） */
   themeColor?: string
-  /** 歌曲加载状态 */
-  loading?: boolean
-  /** 歌曲是否正在播放 */
-  isPlaying?: boolean
   favorite?: boolean
   /** 收藏人数（播放时从歌曲详情获取） */
   favoriteCount?: number
