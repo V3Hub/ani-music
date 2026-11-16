@@ -1,19 +1,21 @@
 /**
  * 歌曲轮播 —— Swiper 垂直轮播实例与切歌联动
+ *
+ * 队列变化（切歌单 / 搜索加歌）时整块重建 Swiper：
+ * Swiper 的 loop 模式会克隆 DOM 节点，而 v-for 重建的 slide 与旧克隆不匹配，
+ * 只调用 update() 仍会出现「声音是这首、封面是另一首」的错位。
  */
 import type { Song } from '@/types/music'
 import { playByIndex } from '@/services/audio-player'
 import { usePlayerStore } from '@/stores/player'
 import type { Swiper as SwiperType } from 'swiper'
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 export function useSongCarousel() {
   const player = usePlayerStore()
 
   /** Swiper 实例 */
   const swiperRef = ref<SwiperType>()
-  /** 当前 slide 索引（双向绑定） */
-  const swiperIndex = ref<number>()
   /** 是否初始化完毕（延迟 50ms 确保 ready） */
   const swiperReady = ref(false)
   /** 用户是否触摸过（避免初始化时误触发切歌） */
@@ -21,6 +23,15 @@ export function useSongCarousel() {
 
   const playList = computed(() => player.playList)
   const currentSong = computed(() => player.currentSong)
+
+  /** 队列指纹：作为 Swiper 的 key，队列内容变化时强制重建实例 */
+  const queueKey = computed(() => playList.value.map(song => song.id).join('|'))
+
+  /** 重建时直接落到当前播放歌曲，避免先闪一下第一首 */
+  const initialSlide = computed(() => {
+    const idx = playList.value.findIndex((song: Song) => song.id === currentSong.value?.id)
+    return idx < 0 ? 0 : idx
+  })
 
   /** 防止快速连滑重复触发 */
   let switchingLock = false
@@ -45,7 +56,6 @@ export function useSongCarousel() {
     if (!playList.value.length) return
 
     const targetIdx = swiper.realIndex as number
-    swiperIndex.value = targetIdx
     const target = playList.value[targetIdx]
     // 滑到的就是当前播放的歌：只同步高亮，不重复加载
     if (!target || target.id === currentSong.value?.id)
@@ -69,24 +79,10 @@ export function useSongCarousel() {
       swiper.slideToLoop(idx, duration)
     else
       swiper.slideTo(idx, duration)
-    swiperIndex.value = idx
   }
 
-  /** 播放器切歌 → 轮播跟随 */
+  /** 播放器切歌（下一首 / 上一首 / 自动播放）→ 轮播跟随 */
   watch(currentSong, () => syncToCurrent(300))
 
-  /**
-   * 歌单被整体替换（切换歌单、搜索加入新歌等）：
-   * v-for 的 slide 会被重建，Swiper 内部缓存仍是旧节点，必须等 DOM 更新后
-   * 先 update() 再对齐当前歌曲；只监听长度会漏掉「新旧歌单长度相同」的情况
-   */
-  watch(() => player.playList, async () => {
-    await nextTick()
-    const swiper = swiperRef.value
-    if (!swiper) return
-    swiper.update()
-    syncToCurrent(0)
-  })
-
-  return { swiperRef, swiperIndex, onSwiperReady, onSlideChange }
+  return { queueKey, initialSlide, onSwiperReady, onSlideChange }
 }

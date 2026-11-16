@@ -1,7 +1,8 @@
 <template>
   <div class="player-stage">
     <Swiper
-      v-model:slide-index="swiperIndex"
+      :key="queueKey"
+      :initial-slide="initialSlide"
       direction="vertical"
       :loop="player.playList.length > 2"
       :slides-per-view="1"
@@ -126,7 +127,7 @@ const emit = defineEmits<{
 }>()
 
 const player = usePlayerStore()
-const { swiperIndex, onSwiperReady, onSlideChange } = useSongCarousel()
+const { queueKey, initialSlide, onSwiperReady, onSlideChange } = useSongCarousel()
 const { currentLine, registerLyricContainer } = useLyricSync()
 const { onSeekEnd, onSeeking } = usePlaybackControl()
 
