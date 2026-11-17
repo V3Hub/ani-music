@@ -3,17 +3,31 @@
     v-model:show="visible"
     position="bottom"
     class="queue-popup"
-    :style="{ height: '100%' }"
   >
     <div class="queue-wrap" :style="dragStyle">
-      <div class="queue-topbar" v-on="dragHandlers">
+      <div class="queue-topbar" v-on="dragHandlers" @click="onTopbarClick">
         <div class="drag-bar" />
       </div>
 
       <div class="quick-row">
         <div class="quick-item" @click="emit('openAddToPlaylist')">
           <div class="quick-circle">
-            <van-icon name="add-o" size="22" />
+            <svg
+              width="22"
+              height="22"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.7"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M4 6h12" />
+              <path d="M4 12h9" />
+              <path d="M4 18h7" />
+              <path d="M17 14v7" />
+              <path d="M13.5 17.5h7" />
+            </svg>
           </div>
           <span>加歌单</span>
         </div>
@@ -30,6 +44,26 @@
             <van-icon name="share-o" size="22" />
           </div>
           <span>分享</span>
+        </div>
+
+        <div class="quick-item" @click="emit('download')">
+          <div class="quick-circle">
+            <svg
+              width="22"
+              height="22"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.7"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M12 4v10" />
+              <path d="m8 10.5 4 4 4-4" />
+              <path d="M5 19h14" />
+            </svg>
+          </div>
+          <span>下载</span>
         </div>
       </div>
 
@@ -99,6 +133,7 @@ defineProps<{
 const emit = defineEmits<{
   (e: 'togglePlayMode'): void
   (e: 'share'): void
+  (e: 'download'): void
   (e: 'removeSong', index: number): void
   (e: 'openAddToPlaylist'): void
 }>()
@@ -108,10 +143,12 @@ const visible = defineModel<boolean>('visible', { required: true })
 const player = usePlayerStore()
 const { playSong } = usePlaybackControl()
 
-// ========== 顶部横杠：下拉拖动关闭 ==========
+// ========== 顶部横杠：下拉拖动关闭 / 点击关闭 ==========
 const dragY = ref(0)
 const dragging = ref(false)
 let startY = 0
+/** 本次交互是否发生了拖动：拖动松手后的 click 不当作“点击关闭” */
+let dragged = false
 
 const dragStyle = computed(() => ({
   transform: `translate3d(0, ${dragY.value}px, 0)`,
@@ -123,6 +160,7 @@ function onDragStart(event: TouchEvent) {
   if (!touch)
     return
   startY = touch.clientY
+  dragged = false
   dragging.value = true
 }
 
@@ -131,6 +169,8 @@ function onDragMove(event: TouchEvent) {
   if (!touch || !dragging.value)
     return
   dragY.value = Math.max(0, touch.clientY - startY)
+  if (dragY.value > 6)
+    dragged = true
 }
 
 function onDragEnd() {
@@ -154,11 +194,24 @@ const dragHandlers = {
   touchend: onDragEnd,
   touchcancel: onDragEnd,
 }
+
+/** 点击顶部横杠关闭：电脑端没有触摸手势时也能关掉弹层 */
+function onTopbarClick() {
+  if (dragged)
+    return
+  visible.value = false
+}
 </script>
 
 <style lang="scss" scoped>
 .queue-popup {
+  height: 100%;
   background: transparent !important;
+
+  // 电脑端：上下留白，弹层变成悬浮面板，点空白处即可关闭
+  @media (min-width: 768px) {
+    height: calc(100% - 48px);
+  }
 }
 
 .queue-wrap {
@@ -171,6 +224,10 @@ const dragHandlers = {
   color: var(--theme-text, #fff);
   background: var(--theme-background, #1a1a1a);
   touch-action: pan-y;
+
+  @media (min-width: 768px) {
+    border-radius: 20px;
+  }
 }
 
 .queue-topbar {
@@ -179,6 +236,7 @@ const dragHandlers = {
   align-items: center;
   justify-content: center;
   height: 30px;
+  cursor: pointer;
 }
 
 .drag-bar {

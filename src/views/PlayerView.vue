@@ -82,6 +82,7 @@
       :play-mode="playMode"
       @toggle-play-mode="togglePlayMode"
       @share="onShareSong(player.currentSong)"
+      @download="onDownloadCurrent"
       @remove-song="removeSong"
       @open-add-to-playlist="openAddToPlaylistFromQueue"
     />
@@ -121,6 +122,7 @@
       @favorite="onActionFavorite"
       @add-to-playlist="addToPlaylistVisible = true"
       @share="onActionShare"
+      @download="onActionDownload"
       @delete="onActionDelete"
     />
 
@@ -155,6 +157,7 @@ import { usePlayerNavigation } from '@/composables/player/usePlayerNavigation'
 import { usePlaybackSource } from '@/composables/player/usePlaybackSource'
 import { useListenTimeStat } from '@/composables/useListenTimeStat'
 import { usePlayerStore } from '@/stores/player'
+import { downloadSong } from '@/utils/download'
 import { shareSong } from '@/utils/share'
 import { play } from '@/services/audio-player'
 import { computed, onMounted, ref, watch } from 'vue'
@@ -444,6 +447,24 @@ function onActionShare() {
   songActionVisible.value = false
 }
 
+/** 下载当前操作的单曲 */
+function onActionDownload() {
+  const song = actionSong.value
+  songActionVisible.value = false
+  if (song)
+    downloadSong(song)
+}
+
+/** 下载正在播放的歌曲 */
+function onDownloadCurrent() {
+  const song = player.currentSong
+  if (!song) {
+    showToast('还没有播放中的歌曲')
+    return
+  }
+  downloadSong(song)
+}
+
 /** 播放列表页「加歌单」：把当前播放歌曲加入歌单（和歌曲操作面板共用同一个选择弹层） */
 function openAddToPlaylistFromQueue() {
   const song = player.currentSong
@@ -676,6 +697,11 @@ async function handleShareLink() {
     z-index: 200;
     padding-bottom: var(--safe-bottom, 0px);
     pointer-events: auto;
+
+    // 电脑端：底部工具栏与屏幕底边留出呼吸空间
+    @media (min-width: 768px) {
+      padding-bottom: calc(var(--safe-bottom, 0px) + 18px);
+    }
   }
 }
 </style>

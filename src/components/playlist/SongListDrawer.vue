@@ -127,7 +127,9 @@ const LOGO_URL = '/qs.svg'
 
 watch(() => props.activePlaylist?.id, (id) => {
   playlistShareCount.value = 0
-  if (id == null)
+  // 「我喜欢的」「历史播放」是本地虚拟歌单（没有真实 id），不请求分享数
+  const source = props.activePlaylist?.source
+  if (!id || (source !== PlaylistSource.playlist && source !== PlaylistSource.discover))
     return
   getPlaylistShareCount(id).then(({ count }) => {
     playlistShareCount.value = count

@@ -30,12 +30,46 @@
           <span>{{ isFavorite ? '取消喜欢' : '喜欢' }}</span>
         </button>
         <button type="button" class="action-item" @click="emit('addToPlaylist')">
-          <van-icon name="music-o" size="22" class="action-icon" />
+          <svg
+            class="action-icon"
+            width="22"
+            height="22"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.7"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M4 6h12" />
+            <path d="M4 12h9" />
+            <path d="M4 18h7" />
+            <path d="M17 14v7" />
+            <path d="M13.5 17.5h7" />
+          </svg>
           <span>添加到歌单</span>
         </button>
         <button type="button" class="action-item" @click="emit('share')">
           <van-icon name="share-o" size="22" class="action-icon" />
           <span>分享歌曲</span>
+        </button>
+        <button type="button" class="action-item" @click="emit('download')">
+          <svg
+            class="action-icon"
+            width="22"
+            height="22"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.7"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M12 4v10" />
+            <path d="m8 10.5 4 4 4-4" />
+            <path d="M5 19h14" />
+          </svg>
+          <span>下载歌曲</span>
         </button>
         <button v-if="canDelete" type="button" class="action-item" @click="emit('delete')">
           <van-icon name="delete-o" size="22" class="action-icon" />
@@ -61,6 +95,7 @@ const emit = defineEmits<{
   (e: 'favorite'): void
   (e: 'addToPlaylist'): void
   (e: 'share'): void
+  (e: 'download'): void
   (e: 'delete'): void
 }>()
 

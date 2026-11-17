@@ -45,7 +45,6 @@
 
           <div class="artist-row">
             <span class="artist">{{ song.singer }}</span>
-            <button type="button" class="follow-btn">关注</button>
           </div>
 
           <div class="action-row">
@@ -67,7 +66,6 @@
               <span class="action-count">{{ shareCounts[String(song.id)] ?? 0 }}</span>
             </div>
             <div class="action-right">
-              <button type="button" class="listen-btn">免费听</button>
               <svg
                 class="more-icon"
                 width="22"
@@ -182,6 +180,11 @@ function onSliderDragEnd() {
     padding: 35px 20px 60px;
     box-sizing: border-box;
     overflow: hidden;
+
+    // 电脑端：底部工具栏上移后同步上移内容，避免进度条被底栏遮挡
+    @media (min-width: 768px) {
+      padding-bottom: 78px;
+    }
   }
 
   .cover-box {
@@ -303,17 +306,6 @@ function onSliderDragEnd() {
       white-space: nowrap;
       overflow: hidden;
     }
-
-    .follow-btn {
-      flex-shrink: 0;
-      padding: 3px 11px;
-      border: none;
-      border-radius: 999px;
-      font-size: 11px;
-      white-space: nowrap;
-      color: var(--theme-text, #fff);
-      background: rgba(128, 128, 128, 0.28);
-    }
   }
 
   .action-row {
@@ -349,15 +341,6 @@ function onSliderDragEnd() {
       align-items: center;
       gap: 14px;
       margin-left: auto;
-
-      .listen-btn {
-        padding: 7px 14px;
-        border: 1px solid rgba(128, 128, 128, 0.45);
-        border-radius: 999px;
-        font-size: 13px;
-        color: var(--theme-text, #fff);
-        background: transparent;
-      }
 
       .more-icon {
         display: block;

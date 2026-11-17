@@ -10,3 +10,41 @@
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior: none;
 }
+.van-overlay {
+  background-color: transparent !important;
+}
+/* 电脑端：自定义滚动条，细圆角且贴合深色主题 */
+@media (min-width: 768px) {
+  .van-popup.van-popup--bottom {
+    bottom: 24px;
+    border-radius: 20px;
+    overflow: hidden;
+  }
+
+  html {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.22);
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.4);
+  }
+
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+}

@@ -30,6 +30,11 @@ const emit = defineEmits<{
   position: relative;
   z-index: 200;
 
+  // 电脑端：标题与顶部边缘留出呼吸空间
+  @media (min-width: 768px) {
+    padding-top: 18px;
+  }
+
   .toolbar-left {
     display: flex;
     align-items: center;

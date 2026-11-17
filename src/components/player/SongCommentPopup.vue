@@ -5,12 +5,12 @@
     round
     teleport="body"
     class="comment-popup"
-    :style="{ height: '100%' }"
   >
     <div class="comment-wrap" :style="mainDrag.style.value">
       <header
         class="comment-head"
         v-on="mainDrag.handlers"
+        @click="onHeaderClick"
       >
         <van-icon name="arrow-down" size="20" class="head-icon" @click="visible = false" />
         <h3 class="head-title">
@@ -21,7 +21,7 @@
             type="button"
             class="sort-btn"
             :class="{ active: sort === 'default' }"
-            @click="changeSort('default')"
+            @click.stop="changeSort('default')"
           >
             默认
           </button>
@@ -30,7 +30,7 @@
             type="button"
             class="sort-btn"
             :class="{ active: sort === 'latest' }"
-            @click="changeSort('latest')"
+            @click.stop="changeSort('latest')"
           >
             最新
           </button>
@@ -134,7 +134,7 @@
     @closed="onEditorClosed"
   >
     <div class="editor-wrap" :style="editorDrag.style.value">
-      <div class="editor-handle" v-on="editorDrag.handlers">
+      <div class="editor-handle" v-on="editorDrag.handlers" @click="onEditorHandleClick">
         <span class="handle-bar" />
       </div>
       <div class="input-box">
@@ -490,6 +490,8 @@ function createDragClose(onClose: () => void) {
   const dragY = ref(0)
   const dragging = ref(false)
   let startY = 0
+  /** 本次交互是否发生了拖动：拖动松手后的 click 不当作“点击关闭” */
+  let dragged = false
 
   return {
     style: computed(() => ({
@@ -503,6 +505,7 @@ function createDragClose(onClose: () => void) {
           return
         startY = touch.clientY
         dragY.value = 0
+        dragged = false
         dragging.value = true
       },
       touchmove(event: TouchEvent) {
@@ -513,6 +516,8 @@ function createDragClose(onClose: () => void) {
           return
         const dy = touch.clientY - startY
         dragY.value = Math.max(0, dy)
+        if (dragY.value > 6)
+          dragged = true
         // 向下拖动时阻止页面级滚动，跟手更顺
         if (dy > 0 && event.cancelable)
           event.preventDefault()
@@ -529,6 +534,8 @@ function createDragClose(onClose: () => void) {
         dragY.value = 0
       },
     },
+    /** 上一次按下后是否发生了拖动（用于避免拖动结束误触发点击关闭） */
+    wasDragged: () => dragged,
   }
 }
 
@@ -538,11 +545,32 @@ const mainDrag = createDragClose(() => {
 const editorDrag = createDragClose(() => {
   editorVisible.value = false
 })
+
+/** 点击顶部标题栏关闭：电脑端没有触摸手势时也能关掉弹层 */
+function onHeaderClick() {
+  if (mainDrag.wasDragged())
+    return
+  visible.value = false
+}
+
+/** 点击发送弹层顶部横杠关闭 */
+function onEditorHandleClick() {
+  if (editorDrag.wasDragged())
+    return
+  editorVisible.value = false
+}
 </script>
 
 <style lang="scss" scoped>
 .comment-popup {
-  background: var(--theme-background, #1a1a1a) !important;
+  height: 100%;
+  // 背景交给内容层：下拉拖动时背景跟内容一起移动
+  background: transparent !important;
+
+  // 电脑端：上下留白，弹层变成悬浮面板，点空白处即可关闭
+  @media (min-width: 768px) {
+    height: calc(100% - 48px);
+  }
 }
 
 .comment-wrap {
@@ -551,6 +579,8 @@ const editorDrag = createDragClose(() => {
   flex-direction: column;
   height: 100%;
   color: var(--theme-text, #fff);
+  background: var(--theme-background, #1a1a1a);
+  border-radius: inherit;
   will-change: transform;
 }
 
@@ -563,6 +593,7 @@ const editorDrag = createDragClose(() => {
   height: 52px;
   padding: 0 16px;
   border-bottom: 1px solid rgba(128, 128, 128, 0.14);
+  cursor: pointer;
 
   .head-icon {
     position: absolute;
@@ -757,12 +788,15 @@ const editorDrag = createDragClose(() => {
 }
 
 .editor-popup {
-  background: var(--theme-background, #1a1a1a) !important;
+  // 背景交给内容层：下拉拖动时背景跟内容一起移动
+  background: transparent !important;
 }
 
 .editor-wrap {
   padding: 0 14px calc(14px + env(safe-area-inset-bottom));
   color: var(--theme-text, #fff);
+  background: var(--theme-background, #1a1a1a);
+  border-radius: inherit;
   will-change: transform;
 }
 
