@@ -36,9 +36,9 @@
             round
             width="22"
             height="22"
-            :src="`https://api.dicebear.com/7.x/avataaars/svg?seed=${activePlaylist?.userToken ?? 'guest'}`"
+            :src="authorAvatar"
           />
-          <span class="username">{{ activePlaylist?.userToken ?? 'guest' }}</span>
+          <span class="username">{{ authorName }}</span>
           <span v-if="activePlaylist?.desc" class="playlist-desc">{{ activePlaylist.desc }}</span>
         </div>
 
@@ -98,6 +98,7 @@ import PlaylistActionSheet from '@/components/playlist/PlaylistActionSheet.vue'
 import WaveBox from '@/components/waveBox/WaveBox.vue'
 import { getPlaylistShareCount } from '@/api/music'
 import { sharePlaylist } from '@/utils/share'
+import { resolveAvatar } from '@/utils/avatar'
 import { useSwipeClose } from '@/composables/useSwipeClose'
 import { computed, ref, watch } from 'vue'
 
@@ -124,6 +125,14 @@ const visible = ref(false)
 const playlistActionVisible = ref(false)
 const playlistShareCount = ref(0)
 const LOGO_URL = '/qs.svg'
+
+/** 作者展示名：真实昵称优先，其次 userToken，最后 guest */
+const authorName = computed(() => props.activePlaylist?.nickname || props.activePlaylist?.userToken || 'guest')
+/** 作者头像：数据库头像优先，没有则按 userToken 生成默认头像 */
+const authorAvatar = computed(() => resolveAvatar(
+  props.activePlaylist?.avatar,
+  `https://api.dicebear.com/7.x/avataaars/svg?seed=${props.activePlaylist?.userToken ?? 'guest'}`,
+))
 
 watch(() => props.activePlaylist?.id, (id) => {
   playlistShareCount.value = 0

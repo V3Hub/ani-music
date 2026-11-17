@@ -47,6 +47,10 @@ export interface PlaylistItem {
   subscribe_count?: number
   owner?: boolean
   user_id?: number
+  /** 歌单作者昵称（后端 users 表关联） */
+  nickname?: string
+  /** 歌单作者头像（base64 / data URL） */
+  avatar?: string
   /** 运行时附加：来源 */
   source?: string | number
   /** 运行时附加：所属用户标识 */
@@ -59,6 +63,10 @@ export interface SongComment {
   songId: number
   /** 评论者标识（后端由登录 token 生成） */
   userId: string
+  /** 评论者昵称（后端 users 表关联） */
+  nickname?: string
+  /** 评论者头像（base64 / data URL） */
+  avatar?: string
   content: string
   /** 顶层评论为 0，回复为所属顶层评论 id */
   parentId: number

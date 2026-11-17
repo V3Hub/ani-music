@@ -40,8 +40,8 @@
               {{ wish.content }}
             </p>
             <div class="detail-meta">
-              <img class="avatar" :src="wishAvatarUrl(wish.userId)" alt="">
-              <span class="user">{{ wishUserName(wish.userId) }}</span>
+              <img class="avatar" :src="wishAvatarUrl(wish.userId, wish.avatar)" alt="">
+              <span class="user">{{ wishUserName(wish.userId, wish.nickname) }}</span>
               <span class="time">{{ formatWishTime(wish.createTime) }}</span>
             </div>
           </article>
@@ -64,11 +64,11 @@
 
           <ul v-else class="message-list">
             <li v-for="message in messages" :key="message.id" class="message-item">
-              <img class="avatar" :src="wishAvatarUrl(message.userId)" alt="">
+              <img class="avatar" :src="wishAvatarUrl(message.userId, message.avatar)" alt="">
               <div class="message-main">
                 <div class="message-top">
                   <span class="user">
-                    {{ wishUserName(message.userId) }}
+                    {{ wishUserName(message.userId, message.nickname) }}
                     <i v-if="message.mine" class="mine">我的</i>
                   </span>
                   <span class="time">{{ formatWishTime(message.createTime) }}</span>
@@ -116,7 +116,6 @@
       />
       <div class="editor-foot">
         <div class="editor-tools">
-          <EmojiPicker @select="insertEmoji" />
           <span class="editor-count">{{ draft.length }}/100</span>
         </div>
         <button
@@ -137,7 +136,6 @@ import type { Wish, WishMessage } from '@/types/wish'
 import { addWishMessage, getWishMessages, toggleWishLike } from '@/api/wish'
 import { formatWishTime, wishAvatarUrl, wishUserName } from '@/utils/wish'
 import { computed, nextTick, ref, watch } from 'vue'
-import EmojiPicker from './EmojiPicker.vue'
 
 const props = defineProps<{
   visible: boolean
@@ -289,23 +287,6 @@ async function handleLike() {
   }
 }
 
-/** 在光标处插入表情，超出字数自动截断 */
-function insertEmoji(emoji: string) {
-  const el = editorRef.value
-  if (!el) {
-    draft.value = (draft.value + emoji).slice(0, 100)
-    return
-  }
-  const start = el.selectionStart ?? draft.value.length
-  const end = el.selectionEnd ?? start
-  draft.value = (draft.value.slice(0, start) + emoji + draft.value.slice(end)).slice(0, 100)
-  nextTick(() => {
-    el.focus()
-    const pos = Math.min(start + emoji.length, 100)
-    el.setSelectionRange(pos, pos)
-  })
-}
-
 /** 点击底部输入框，弹出留言编辑面板 */
 function openEditor() {
   editorVisible.value = true
@@ -346,7 +327,7 @@ async function sendMessage() {
   flex-direction: column;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(180deg, #251a46 0%, #150f2b 100%);
+  background: #141625;
   will-change: transform;
 }
 
@@ -401,9 +382,9 @@ async function sendMessage() {
   overflow: hidden;
   padding: 18px 16px 14px;
   border-radius: 20px;
-  background: linear-gradient(155deg, rgba(168, 85, 247, 0.28), rgba(236, 72, 153, 0.14));
-  border: 1px solid rgba(244, 114, 182, 0.3);
-  box-shadow: 0 16px 36px rgba(12, 7, 32, 0.45);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.35);
 }
 
 .card-star {
@@ -487,8 +468,8 @@ async function sendMessage() {
 
 .like-btn.liked {
   color: #fff;
-  background: linear-gradient(120deg, #a855f7, #ec4899);
-  box-shadow: 0 10px 24px rgba(236, 72, 153, 0.35);
+  background: rgba(251, 113, 133, 0.22);
+  border-color: rgba(251, 113, 133, 0.45);
 }
 
 .message-head {
@@ -598,7 +579,7 @@ async function sendMessage() {
 }
 
 .message-editor {
-  background: linear-gradient(180deg, #251a46 0%, #150f2b 100%);
+  background: #141625;
 }
 
 .editor-wrap {
@@ -675,12 +656,17 @@ async function sendMessage() {
   font-size: 13px;
   font-weight: 600;
   color: #fff;
-  background: linear-gradient(120deg, #a855f7, #ec4899);
-  box-shadow: 0 8px 20px rgba(236, 72, 153, 0.3);
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.25);
   cursor: pointer;
   transition:
     opacity 0.2s ease,
-    transform 0.2s ease;
+    transform 0.2s ease,
+    background-color 0.2s ease;
+}
+
+.editor-send:not(:disabled):active {
+  background: rgba(255, 255, 255, 0.28);
 }
 
 .editor-send:disabled {

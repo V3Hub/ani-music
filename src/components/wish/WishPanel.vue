@@ -1,11 +1,5 @@
 <template>
   <div class="wish-panel">
-    <div class="aurora" aria-hidden="true">
-      <span class="blob blob-a" />
-      <span class="blob blob-b" />
-      <span class="blob blob-c" />
-    </div>
-
     <div class="panel-header">
       <h1 class="panel-title">
         心愿墙
@@ -29,7 +23,6 @@
     </section>
     <section v-else class="compose" :class="{ focused }">
       <textarea
-        ref="inputRef"
         v-model="draft"
         class="compose-input"
         maxlength="100"
@@ -40,7 +33,6 @@
       />
       <div class="compose-foot">
         <div class="compose-tools">
-          <EmojiPicker @select="insertEmoji" />
           <span class="compose-count">{{ draft.length }}/100</span>
         </div>
         <button
@@ -73,13 +65,13 @@
             @click="openDetail(wish)"
           >
             <span class="rank-flag">{{ index + 1 }}</span>
-            <img class="avatar" :src="wishAvatarUrl(wish.userId)" alt="">
+            <img class="avatar" :src="wishAvatarUrl(wish.userId, wish.avatar)" alt="">
             <div class="top-main">
               <p class="top-content">
                 {{ wish.content }}
               </p>
               <span class="wish-user">
-                {{ wishUserName(wish.userId) }}
+                {{ wishUserName(wish.userId, wish.nickname) }}
                 <i v-if="wish.mine" class="mine-inline">我的</i>
               </span>
             </div>
@@ -123,8 +115,8 @@
                 {{ currentWish.content }}
               </p>
               <div class="wish-meta">
-                <img class="avatar" :src="wishAvatarUrl(currentWish.userId)" alt="">
-                <span class="wish-user">{{ wishUserName(currentWish.userId) }}</span>
+                <img class="avatar" :src="wishAvatarUrl(currentWish.userId, currentWish.avatar)" alt="">
+                <span class="wish-user">{{ wishUserName(currentWish.userId, currentWish.nickname) }}</span>
                 <span class="wish-time">{{ formatWishTime(currentWish.createTime) }}</span>
                 <div class="wish-actions">
                   <button
@@ -168,8 +160,7 @@
 import type { Wish } from '@/types/wish'
 import { addWish, getWishes, toggleWishLike } from '@/api/wish'
 import { formatWishTime, wishAvatarUrl, wishUserName } from '@/utils/wish'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
-import EmojiPicker from './EmojiPicker.vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import WishDetailPopup from './WishDetailPopup.vue'
 
 const ROTATE_INTERVAL = 4500
@@ -181,7 +172,6 @@ const wishes = ref<Wish[]>([])
 const loading = ref(true)
 const posting = ref(false)
 const draft = ref('')
-const inputRef = ref<HTMLTextAreaElement>()
 const focused = ref(false)
 const rotateIndex = ref(0)
 const detailVisible = ref(false)
@@ -263,23 +253,6 @@ function onTouchEnd(event: TouchEvent) {
     move(delta > 0 ? -1 : 1)
   }
   resumeRotate()
-}
-
-/** 在光标处插入表情，超出字数自动截断 */
-function insertEmoji(emoji: string) {
-  const el = inputRef.value
-  if (!el) {
-    draft.value = (draft.value + emoji).slice(0, 100)
-    return
-  }
-  const start = el.selectionStart ?? draft.value.length
-  const end = el.selectionEnd ?? start
-  draft.value = (draft.value.slice(0, start) + emoji + draft.value.slice(end)).slice(0, 100)
-  nextTick(() => {
-    el.focus()
-    const pos = Math.min(start + emoji.length, 100)
-    el.setSelectionRange(pos, pos)
-  })
 }
 
 async function submitWish() {
@@ -368,64 +341,6 @@ onBeforeUnmount(pauseRotate)
   color: var(--theme-text, #fff);
   font-size: 14px;
   line-height: 1.5;
-  background:
-    radial-gradient(1px 1px at 18% 12%, rgba(255, 255, 255, 0.8), transparent 60%),
-    radial-gradient(1px 1px at 72% 8%, rgba(244, 114, 182, 0.9), transparent 60%),
-    radial-gradient(1px 1px at 42% 26%, rgba(167, 139, 250, 0.9), transparent 60%),
-    radial-gradient(1px 1px at 86% 34%, rgba(255, 255, 255, 0.6), transparent 60%);
-  background-size: 280px 260px;
-  background-repeat: repeat;
-  isolation: isolate;
-}
-
-.aurora {
-  position: absolute;
-  inset: 0 0 auto;
-  height: 380px;
-  overflow: hidden;
-  pointer-events: none;
-  opacity: 0.6;
-  filter: blur(48px);
-  z-index: -1;
-}
-
-.blob {
-  position: absolute;
-  width: 190px;
-  height: 190px;
-  border-radius: 50%;
-  animation: blob-float 14s ease-in-out infinite alternate;
-}
-
-.blob-a {
-  top: -60px;
-  left: -40px;
-  background: rgba(168, 85, 247, 0.65);
-}
-
-.blob-b {
-  top: 20px;
-  right: -60px;
-  background: rgba(236, 72, 153, 0.55);
-  animation-delay: -4s;
-}
-
-.blob-c {
-  top: 140px;
-  left: 32%;
-  width: 150px;
-  height: 150px;
-  background: rgba(56, 189, 248, 0.4);
-  animation-delay: -8s;
-}
-
-@keyframes blob-float {
-  from {
-    transform: translate3d(0, 0, 0) scale(1);
-  }
-  to {
-    transform: translate3d(18px, 26px, 0) scale(1.18);
-  }
 }
 
 .panel-header {
@@ -444,10 +359,7 @@ onBeforeUnmount(pauseRotate)
   line-height: 1.25;
   font-weight: 800;
   letter-spacing: 0.6px;
-  background: linear-gradient(120deg, #f5e6ff, #f0abfc 45%, #fda4af);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: #fff;
 }
 
 .title-star {
@@ -473,9 +385,9 @@ onBeforeUnmount(pauseRotate)
   border-radius: 999px;
   font-size: 11px;
   line-height: 1.4;
-  color: #e9d5ff;
-  background: rgba(168, 85, 247, 0.22);
-  border: 1px solid rgba(196, 181, 253, 0.32);
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
 }
 
 .panel-sub {
@@ -488,18 +400,18 @@ onBeforeUnmount(pauseRotate)
 .compose {
   padding: 14px;
   border-radius: 20px;
-  background: linear-gradient(150deg, rgba(168, 85, 247, 0.2), rgba(236, 72, 153, 0.12));
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   transition:
     border-color 0.3s ease,
     box-shadow 0.3s ease;
 }
 
 .compose.focused {
-  border-color: rgba(244, 114, 182, 0.65);
+  border-color: rgba(255, 255, 255, 0.4);
   box-shadow:
-    0 0 0 3px rgba(244, 114, 182, 0.14),
-    0 14px 34px rgba(168, 85, 247, 0.25);
+    0 0 0 3px rgba(255, 255, 255, 0.08),
+    0 14px 34px rgba(0, 0, 0, 0.28);
 }
 
 .weekly-lock {
@@ -508,9 +420,8 @@ onBeforeUnmount(pauseRotate)
   gap: 12px;
   padding: 14px 16px;
   border-radius: 18px;
-  background: linear-gradient(150deg, rgba(253, 230, 138, 0.14), rgba(168, 85, 247, 0.14));
-  border: 1px dashed rgba(253, 230, 138, 0.4);
-  box-shadow: inset 0 0 30px rgba(168, 85, 247, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px dashed rgba(255, 255, 255, 0.2);
 }
 
 .lock-star {
@@ -587,12 +498,17 @@ onBeforeUnmount(pauseRotate)
   font-size: 13px;
   font-weight: 600;
   color: #fff;
-  background: linear-gradient(120deg, #a855f7, #ec4899 62%, #f472b6);
-  box-shadow: 0 10px 22px rgba(236, 72, 153, 0.32);
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.25);
   cursor: pointer;
   transition:
     transform 0.2s ease,
-    opacity 0.2s ease;
+    opacity 0.2s ease,
+    background-color 0.2s ease;
+}
+
+.compose-submit:not(:disabled):active {
+  background: rgba(255, 255, 255, 0.28);
 }
 
 .compose-submit:disabled {
@@ -639,8 +555,7 @@ onBeforeUnmount(pauseRotate)
   height: 13px;
   margin-top: -6.5px;
   border-radius: 2px;
-  background: linear-gradient(180deg, #c084fc, #f472b6);
-  box-shadow: 0 0 8px rgba(244, 114, 182, 0.8);
+  background: rgba(255, 255, 255, 0.55);
 }
 
 .section-hint {
@@ -662,17 +577,19 @@ onBeforeUnmount(pauseRotate)
   gap: 10px;
   padding: 11px 14px 11px 16px;
   border-radius: 14px;
-  background: linear-gradient(120deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.04));
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   cursor: pointer;
   animation: card-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) backwards;
   transition:
     transform 0.25s ease,
-    border-color 0.25s ease;
+    border-color 0.25s ease,
+    background-color 0.25s ease;
 }
 
 .top-row:active {
   transform: scale(0.99);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .top-main {
@@ -704,28 +621,30 @@ onBeforeUnmount(pauseRotate)
   border-radius: 999px;
   font-size: 9px;
   font-style: normal;
-  color: #fbcfe8;
-  background: rgba(236, 72, 153, 0.24);
+  color: rgba(255, 255, 255, 0.75);
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .wish-card {
   position: relative;
   padding: 12px 14px 8px;
   border-radius: 14px;
-  background: linear-gradient(120deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.04));
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 8px 20px rgba(9, 6, 26, 0.22);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.28);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   cursor: pointer;
   animation: card-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) backwards;
   transition:
     transform 0.25s ease,
-    border-color 0.25s ease;
+    border-color 0.25s ease,
+    background-color 0.25s ease;
 }
 
 .wish-card:active {
   transform: scale(0.985);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 @keyframes card-in {
@@ -796,9 +715,9 @@ onBeforeUnmount(pauseRotate)
   padding: 1px 7px;
   border-radius: 999px;
   font-size: 10px;
-  color: #fbcfe8;
-  background: rgba(236, 72, 153, 0.2);
-  border: 1px solid rgba(244, 114, 182, 0.35);
+  color: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.18);
 }
 
 .wish-content {
@@ -911,15 +830,7 @@ onBeforeUnmount(pauseRotate)
 }
 
 .carousel-card::after {
-  content: '';
-  position: absolute;
-  top: -40px;
-  right: -30px;
-  width: 120px;
-  height: 120px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(192, 132, 252, 0.35), transparent 70%);
-  animation: halo 3.6s ease-in-out infinite alternate;
+  display: none;
 }
 
 @keyframes halo {
@@ -962,8 +873,7 @@ onBeforeUnmount(pauseRotate)
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #a855f7, #ec4899);
-  box-shadow: 0 0 10px rgba(236, 72, 153, 0.7);
+  background: rgba(255, 255, 255, 0.5);
   transition: width 0.45s ease;
 }
 
@@ -978,7 +888,7 @@ onBeforeUnmount(pauseRotate)
   display: block;
   margin-bottom: 8px;
   font-size: 32px;
-  color: #f0abfc;
+  color: rgba(255, 255, 255, 0.5);
   animation: star-pulse 2.4s ease-in-out infinite;
 }
 </style>

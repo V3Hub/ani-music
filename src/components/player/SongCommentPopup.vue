@@ -12,37 +12,39 @@
         v-on="mainDrag.handlers"
         @click="onHeaderClick"
       >
-        <van-icon name="arrow-down" size="20" class="head-icon" @click="visible = false" />
+        <span class="grab" />
         <h3 class="head-title">
           评论<template v-if="total"> ({{ total }})</template>
         </h3>
-        <div class="head-sort">
-          <button
-            type="button"
-            class="sort-btn"
-            :class="{ active: sort === 'default' }"
-            @click.stop="changeSort('default')"
-          >
-            默认
-          </button>
-          <span class="sort-divider">|</span>
-          <button
-            type="button"
-            class="sort-btn"
-            :class="{ active: sort === 'latest' }"
-            @click.stop="changeSort('latest')"
-          >
-            最新
-          </button>
-        </div>
+        <van-icon name="cross" class="head-close" @click.stop="visible = false" />
       </header>
+
+      <div class="comment-sort">
+        <button
+          type="button"
+          class="sort-btn"
+          :class="{ active: sort === 'default' }"
+          @click.stop="changeSort('default')"
+        >
+          默认
+        </button>
+        <span class="sort-divider">|</span>
+        <button
+          type="button"
+          class="sort-btn"
+          :class="{ active: sort === 'latest' }"
+          @click.stop="changeSort('latest')"
+        >
+          最新
+        </button>
+      </div>
 
       <div class="comment-scroll" @scroll="onScroll">
         <div v-for="item in comments" :key="item.id" class="comment-item">
-          <img class="avatar" :src="avatarOf(item.userId)" alt="">
+          <img class="avatar" :src="avatarOf(item)" alt="">
           <div class="comment-main">
             <p class="author">
-              {{ displayName(item.userId) }}
+              {{ displayName(item) }}
             </p>
             <p class="content">
               {{ item.content }}
@@ -59,10 +61,10 @@
 
             <div v-if="item.replies.length" class="reply-list">
               <div v-for="reply in item.replies" :key="reply.id" class="reply-item">
-                <img class="avatar small" :src="avatarOf(reply.userId)" alt="">
+                <img class="avatar small" :src="avatarOf(reply)" alt="">
                 <div class="comment-main">
                   <p class="author">
-                    {{ displayName(reply.userId) }}
+                    {{ displayName(reply) }}
                   </p>
                   <p class="content">
                     {{ reply.content }}
@@ -116,14 +118,15 @@
       </div>
 
       <footer class="comment-input">
-        <div class="input-trigger" @click="openEditor()">
-          {{ replyTarget ? `回复 @${displayName(replyTarget.userId)}` : '喊上朋友来听这首歌' }}
-        </div>
+        <button type="button" class="foot-trigger" @click="openEditor()">
+          <van-icon name="edit" />
+          <span>{{ replyTarget ? `回复 @${displayName(replyTarget)}` : '喊上朋友来听这首歌' }}</span>
+        </button>
       </footer>
     </div>
   </van-popup>
 
-  <!-- 二级弹层：点击输入框后弹出独立的发送界面 -->
+  <!-- 二级弹层：点击输入框后弹出，样式与心愿留言一致 -->
   <van-popup
     v-model:show="editorVisible"
     position="bottom"
@@ -133,49 +136,32 @@
     @opened="focusInput"
     @closed="onEditorClosed"
   >
-    <div class="editor-wrap" :style="editorDrag.style.value">
-      <div class="editor-handle" v-on="editorDrag.handlers" @click="onEditorHandleClick">
-        <span class="handle-bar" />
+    <div class="editor-wrap">
+      <div class="editor-head">
+        <span class="editor-title">{{ replyTarget ? '写下回复' : '写下评论' }}</span>
+        <button type="button" class="editor-cancel" @click="editorVisible = false">
+          取消
+        </button>
       </div>
-      <div class="input-box">
-        <textarea
-          ref="inputRef"
-          v-model="draft"
-          class="input-field"
-          rows="1"
-          maxlength="500"
-          :placeholder="replyTarget ? `回复 @${displayName(replyTarget.userId)}` : '喊上朋友来听这首歌'"
-          @input="autoGrow"
-        />
-      </div>
-      <div class="input-toolbar">
-        <div class="tool-left">
-          <van-icon
-            name="smile-o"
-            size="22"
-            class="tool-icon"
-            :class="{ active: emojiOpen }"
-            @click="emojiOpen = !emojiOpen"
-          />
+      <textarea
+        ref="inputRef"
+        v-model="draft"
+        class="editor-input"
+        maxlength="500"
+        rows="3"
+        :placeholder="replyTarget ? `回复 @${displayName(replyTarget)}` : '喊上朋友来听这首歌'"
+      />
+      <div class="editor-foot">
+        <div class="editor-tools">
+          <span class="editor-count">{{ draft.length }}/500</span>
         </div>
         <button
           type="button"
-          class="send-btn"
+          class="editor-send"
           :disabled="!draft.trim() || sending"
           @click="submit"
         >
           {{ sending ? '发送中' : '发送' }}
-        </button>
-      </div>
-      <div v-if="emojiOpen" class="emoji-panel">
-        <button
-          v-for="emoji in EMOJIS"
-          :key="emoji"
-          type="button"
-          class="emoji-btn"
-          @click="insertText(emoji)"
-        >
-          {{ emoji }}
         </button>
       </div>
     </div>
@@ -186,6 +172,7 @@
 import type { Song, SongComment } from '@/types/music'
 import { addSongComment, deleteSongComment, getSongCommentCount, getSongComments, toggleCommentLike } from '@/api/music'
 import { toUserToken } from '@/composables/player/usePlaylistDiscovery'
+import { resolveAvatar } from '@/utils/avatar'
 import { showToast } from 'vant'
 import { computed, nextTick, ref, watch } from 'vue'
 
@@ -215,77 +202,22 @@ const finished = ref(false)
 const draft = ref('')
 const sending = ref(false)
 const replyTarget = ref<SongComment | null>(null)
-const emojiOpen = ref(false)
 const editorVisible = ref(false)
 const inputRef = ref<HTMLTextAreaElement | null>(null)
 
-const EMOJIS = [
-  '😂',
-  '❤️',
-  '👍',
-  '🎉',
-  '🌹',
-  '👏',
-  '🔥',
-  '😭',
-  '😍',
-  '🥰',
-  '😎',
-  '🤔',
-  '😴',
-  '🙏',
-  '💪',
-  '🎵',
-  '✨',
-  '💔',
-  '😢',
-  '😡',
-  '🤣',
-  '🥁',
-  '🎸',
-  '🍺',
-]
-
-/** 输入框随内容自适应高度，超过上限后内部滚动 */
-function autoGrow() {
-  const el = inputRef.value
-  if (!el)
-    return
-  el.style.height = 'auto'
-  el.style.height = `${Math.min(el.scrollHeight, 108)}px`
+/** 有真实头像用真实头像，否则用 DiceBear（seed 为 userId） */
+function avatarOf(comment: SongComment) {
+  return resolveAvatar(
+    comment.avatar,
+    `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(comment.userId || 'guest')}`,
+  )
 }
 
-/** 在光标位置插入文本（表情、@），保持焦点不丢 */
-function insertText(text: string) {
-  const el = inputRef.value
-  if (!el) {
-    draft.value += text
-    return
-  }
-  const start = el.selectionStart ?? draft.value.length
-  const end = el.selectionEnd ?? start
-  draft.value = draft.value.slice(0, start) + text + draft.value.slice(end)
-  nextTick(() => {
-    el.focus()
-    const pos = start + text.length
-    el.setSelectionRange(pos, pos)
-    autoGrow()
-  })
-}
-
-function resetInputHeight() {
-  const el = inputRef.value
-  if (el)
-    el.style.height = 'auto'
-}
-
-function avatarOf(userId: string) {
-  return `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(userId || 'guest')}`
-}
-
-/** 展示与歌单一致的 userToken（非数字 id） */
-function displayName(userId: string) {
-  const value = String(userId || '')
+/** 真实昵称优先，否则把数字 id 展示为 userToken */
+function displayName(comment: SongComment) {
+  if (comment.nickname)
+    return comment.nickname
+  const value = String(comment.userId || '')
   const numeric = Number(value)
   if (value && Number.isFinite(numeric))
     return toUserToken(numeric)
@@ -394,20 +326,14 @@ function startReply(item: SongComment) {
 function openEditor(item: SongComment | null = null) {
   replyTarget.value = item
   editorVisible.value = true
-  nextTick(() => {
-    inputRef.value?.focus()
-    autoGrow()
-  })
 }
 
 function focusInput() {
   inputRef.value?.focus()
-  autoGrow()
 }
 
 function onEditorClosed() {
   replyTarget.value = null
-  emojiOpen.value = false
 }
 
 /** 直接删除自己的评论：连同其回复，按接口返回条数同步总数 */
@@ -463,10 +389,8 @@ async function submit() {
       comments.value.unshift({ ...created, replies: [], repliesLoaded: false })
     }
     replyTarget.value = null
-    emojiOpen.value = false
     editorVisible.value = false
     await nextTick()
-    resetInputHeight()
     showToast('评论成功')
   } catch {
     /* 请求错误已由拦截器提示 */
@@ -542,9 +466,6 @@ function createDragClose(onClose: () => void) {
 const mainDrag = createDragClose(() => {
   visible.value = false
 })
-const editorDrag = createDragClose(() => {
-  editorVisible.value = false
-})
 
 /** 点击顶部标题栏关闭：电脑端没有触摸手势时也能关掉弹层 */
 function onHeaderClick() {
@@ -552,25 +473,13 @@ function onHeaderClick() {
     return
   visible.value = false
 }
-
-/** 点击发送弹层顶部横杠关闭 */
-function onEditorHandleClick() {
-  if (editorDrag.wasDragged())
-    return
-  editorVisible.value = false
-}
 </script>
 
 <style lang="scss" scoped>
 .comment-popup {
-  height: 100%;
+  height: 74%;
   // 背景交给内容层：下拉拖动时背景跟内容一起移动
   background: transparent !important;
-
-  // 电脑端：上下留白，弹层变成悬浮面板，点空白处即可关闭
-  @media (min-width: 768px) {
-    height: calc(100% - 48px);
-  }
 }
 
 .comment-wrap {
@@ -579,7 +488,7 @@ function onEditorHandleClick() {
   flex-direction: column;
   height: 100%;
   color: var(--theme-text, #fff);
-  background: var(--theme-background, #1a1a1a);
+  background: #141625;
   border-radius: inherit;
   will-change: transform;
 }
@@ -590,55 +499,71 @@ function onEditorHandleClick() {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  height: 52px;
-  padding: 0 16px;
-  border-bottom: 1px solid rgba(128, 128, 128, 0.14);
+  padding: 18px 16px 10px;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+}
+
+.grab {
+  position: absolute;
+  top: 7px;
+  left: 50%;
+  width: 34px;
+  height: 4px;
+  margin-left: -17px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.head-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 1px;
+}
+
+.head-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  font-size: 16px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.comment-sort {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 0 18px 8px;
+  font-size: 12px;
+}
+
+.sort-btn {
+  padding: 0;
+  border: none;
+  font-size: 12px;
+  color: inherit;
+  background: transparent;
+  opacity: 0.55;
   cursor: pointer;
 
-  .head-icon {
-    position: absolute;
-    left: 16px;
-    opacity: 0.85;
+  &.active {
+    font-weight: 600;
+    opacity: 1;
   }
+}
 
-  .head-title {
-    margin: 0;
-    font-size: 16px;
-    font-weight: 500;
-  }
-
-  .head-sort {
-    position: absolute;
-    right: 16px;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 13px;
-  }
-
-  .sort-btn {
-    padding: 0;
-    border: none;
-    font-size: 13px;
-    color: inherit;
-    background: transparent;
-    opacity: 0.55;
-    cursor: pointer;
-
-    &.active {
-      font-weight: 500;
-      opacity: 1;
-    }
-  }
-
-  .sort-divider {
-    opacity: 0.25;
-  }
+.sort-divider {
+  opacity: 0.25;
 }
 
 .comment-scroll {
   flex: 1;
-  padding: 6px 16px calc(16px + env(safe-area-inset-bottom));
+  min-height: 0;
+  padding: 4px 18px 12px;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }
@@ -647,8 +572,15 @@ function onEditorHandleClick() {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  padding: 14px 0;
-  border-bottom: 1px solid rgba(128, 128, 128, 0.1);
+  padding: 14px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.35);
+
+  & + .comment-item {
+    margin-top: 12px;
+  }
 }
 
 .avatar {
@@ -657,7 +589,7 @@ function onEditorHandleClick() {
   height: 38px;
   border-radius: 50%;
   object-fit: cover;
-  background: rgba(128, 128, 128, 0.2);
+  background: rgba(255, 255, 255, 0.08);
 
   &.small {
     width: 28px;
@@ -671,18 +603,18 @@ function onEditorHandleClick() {
 }
 
 .author {
-  margin: 0 0 5px;
+  margin: 0 0 6px;
   font-size: 12px;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  opacity: 0.55;
+  color: rgba(255, 255, 255, 0.55);
 }
 
 .content {
   margin: 0;
-  font-size: 15px;
-  line-height: 1.55;
+  font-size: 14px;
+  line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -726,9 +658,10 @@ function onEditorHandleClick() {
 
 .reply-list {
   margin-top: 10px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: rgba(128, 128, 128, 0.12);
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .reply-item {
@@ -754,7 +687,7 @@ function onEditorHandleClick() {
   padding: 0;
   border: none;
   font-size: 12px;
-  color: #5b9dff;
+  color: rgba(255, 255, 255, 0.6);
   background: transparent;
   cursor: pointer;
 }
@@ -767,139 +700,135 @@ function onEditorHandleClick() {
 }
 
 .comment-input {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   flex-shrink: 0;
-  padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
-  border-top: 1px solid rgba(128, 128, 128, 0.14);
-  background: rgba(0, 0, 0, 0.18);
+  padding: 10px 16px calc(12px + env(safe-area-inset-bottom));
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(16, 11, 32, 0.6);
 }
 
-.input-trigger {
-  height: 36px;
+.foot-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  height: 38px;
   padding: 0 14px;
-  border-radius: 18px;
-  font-size: 14px;
-  line-height: 36px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.38);
+  font-size: 13px;
+  text-align: left;
+  cursor: text;
   overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  background: rgba(128, 128, 128, 0.16);
-  opacity: 0.45;
-  cursor: pointer;
+
+  span {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+}
+
+.foot-trigger:active {
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .editor-popup {
-  // 背景交给内容层：下拉拖动时背景跟内容一起移动
-  background: transparent !important;
+  background: #141625;
 }
 
 .editor-wrap {
-  padding: 0 14px calc(14px + env(safe-area-inset-bottom));
+  padding: 16px 16px calc(14px + env(safe-area-inset-bottom));
   color: var(--theme-text, #fff);
-  background: var(--theme-background, #1a1a1a);
-  border-radius: inherit;
-  will-change: transform;
 }
 
-.editor-handle {
-  display: flex;
-  justify-content: center;
-  padding: 8px 0 10px;
-  cursor: grab;
-
-  .handle-bar {
-    width: 36px;
-    height: 4px;
-    border-radius: 2px;
-    background: rgba(128, 128, 128, 0.5);
-  }
-}
-
-.input-box {
-  padding: 10px 14px;
-  border-radius: 14px;
-  background: rgba(128, 128, 128, 0.16);
-}
-
-.input-field {
-  display: block;
-  width: 100%;
-  min-height: 22px;
-  max-height: 108px;
-  padding: 0;
-  border: none;
-  font-family: inherit;
-  font-size: 15px;
-  line-height: 1.5;
-  color: inherit;
-  background: transparent;
-  outline: none;
-  resize: none;
-
-  &::placeholder {
-    color: inherit;
-    opacity: 0.45;
-  }
-}
-
-.input-toolbar {
+.editor-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 10px;
+  margin-bottom: 12px;
 }
 
-.tool-left {
+.editor-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.editor-cancel {
+  padding: 4px 2px;
+  border: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.editor-input {
+  display: block;
+  width: 100%;
+  min-height: 88px;
+  padding: 12px;
+  box-sizing: border-box;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  outline: none;
+  resize: none;
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.editor-input::placeholder {
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.editor-foot {
   display: flex;
   align-items: center;
-  gap: 18px;
+  justify-content: space-between;
+  margin-top: 12px;
 }
 
-.tool-icon {
-  opacity: 0.8;
-  cursor: pointer;
-
-  &.active {
-    color: #ff5c7c;
-    opacity: 1;
-  }
-}
-
-.send-btn {
-  flex-shrink: 0;
-  height: 32px;
-  padding: 0 20px;
-  border: none;
-  border-radius: 16px;
-  font-size: 14px;
-  font-weight: 500;
-  color: #111;
-  background: #fff;
-  cursor: pointer;
-
-  &:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
-}
-
-.emoji-panel {
+.editor-tools {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  max-height: 132px;
-  margin-top: 10px;
-  overflow-y: auto;
+  align-items: center;
+  gap: 8px;
 }
 
-.emoji-btn {
-  width: 34px;
+.editor-count {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+  font-variant-numeric: tabular-nums;
+}
+
+.editor-send {
   height: 34px;
-  padding: 0;
-  border: none;
-  border-radius: 8px;
-  font-size: 20px;
-  line-height: 1;
-  background: transparent;
+  padding: 0 20px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.25);
   cursor: pointer;
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease,
+    background-color 0.2s ease;
+}
+
+.editor-send:not(:disabled):active {
+  background: rgba(255, 255, 255, 0.28);
+  transform: scale(0.96);
+}
+
+.editor-send:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 </style>

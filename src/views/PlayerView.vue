@@ -37,6 +37,8 @@
       <OwnerPanel
         v-if="currentTab === 'owner'"
         :user-token="userToken"
+        :nickname="profileStore.nickname"
+        :avatar="profileStore.avatar"
         :playlists="playlists"
         :play-history="playHistory"
         :favorite-songs="favoriteSongs"
@@ -48,6 +50,7 @@
         @open-playlist="onOpenPlaylist"
         @create-playlist="createVisible = true"
         @open-settings="openSettings"
+        @open-login="router.push('/login')"
       />
 
       <DiscoverPanel
@@ -110,8 +113,10 @@
       :current-source="source"
       :sleep-label="sleepLabel"
       :sleep-minutes="sleepMinutes"
+      :logged-in="userStore.isLoggedIn"
       @confirm-source="confirmSource"
       @set-sleep-timer="setSleepTimer"
+      @logout="handleLogout"
     />
 
     <CreatePlaylistPopup v-model:visible="createVisible" :submitting="creatingPlaylist" @submit="onCreatePlaylist" />
@@ -159,10 +164,14 @@ import { usePlayerNavigation } from '@/composables/player/usePlayerNavigation'
 import { usePlaybackSource } from '@/composables/player/usePlaybackSource'
 import { useListenTimeStat } from '@/composables/useListenTimeStat'
 import { usePlayerStore } from '@/stores/player'
+import { useUserStore } from '@/stores/user'
+import { useUserProfileStore } from '@/stores/userProfile'
+import { LOGIN_RETURN_OWNER_KEY } from '@/constants/auth'
 import { downloadSong } from '@/utils/download'
 import { shareSong } from '@/utils/share'
 import { play } from '@/services/audio-player'
 import { computed, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import DiscoverPanel from '@/components/discover/DiscoverPanel.vue'
 import ListeningModeSidebar from '@/components/player/ListeningModeSidebar.vue'
 import PlaybackQueuePopup from '@/components/player/PlaybackQueuePopup.vue'
@@ -181,6 +190,17 @@ import WelfarePanel from '@/components/welfare/WelfarePanel.vue'
 import WishPanel from '@/components/wish/WishPanel.vue'
 
 const player = usePlayerStore()
+const router = useRouter()
+const userStore = useUserStore()
+const profileStore = useUserProfileStore()
+
+/** 退出登录：清 token 与资料，回到游客身份并刷新数据（刷新时 main.ts 会重新走指纹自动登录） */
+function handleLogout() {
+  settingsVisible.value = false
+  userStore.clearToken()
+  profileStore.applyProfile(null)
+  window.location.reload()
+}
 
 const drawerRef = ref<InstanceType<typeof SongListDrawer>>()
 const searchVisible = ref(false)
@@ -572,6 +592,12 @@ function onFavorite(id?: string | number) {
 }
 
 onMounted(async () => {
+  // 从登录页返回时：切回「我的」页，资料与列表按新账号重新拉取
+  if (sessionStorage.getItem(LOGIN_RETURN_OWNER_KEY)) {
+    sessionStorage.removeItem(LOGIN_RETURN_OWNER_KEY)
+    navigate('owner')
+  }
+  profileStore.fetchProfile()
   if (player.playList.length === 0) {
     // 首屏播放的是最热歌曲，对应「默认模式」，进入页面即选中（不等接口返回）
     player.setQueueSource({ type: 'mode', mode: 'default' })

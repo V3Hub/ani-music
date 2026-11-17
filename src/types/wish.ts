@@ -2,6 +2,10 @@
 export interface Wish {
   id: number
   userId: string
+  /** 作者昵称（后端 users 表关联） */
+  nickname?: string
+  /** 作者头像（base64 / data URL） */
+  avatar?: string
   content: string
   likeCount: number
   messageCount: number
@@ -15,6 +19,10 @@ export interface WishMessage {
   id: number
   wishId: number
   userId: string
+  /** 留言者昵称 */
+  nickname?: string
+  /** 留言者头像 */
+  avatar?: string
   content: string
   mine: boolean
   createTime: number

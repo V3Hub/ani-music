@@ -23,7 +23,7 @@
             {{ playlist.name }}
           </div>
           <div class="head-owner">
-            @{{ playlist.userToken ?? 'guest' }} · {{ shareCount ?? 0 }} 人分享
+            @{{ ownerName }} · {{ shareCount ?? 0 }} 人分享
           </div>
         </div>
       </div>
@@ -52,8 +52,9 @@
 
 <script setup lang="ts">
 import type { PlaylistItem } from '@/types/music'
+import { computed } from 'vue'
 
-defineProps<{
+const props = defineProps<{
   visible: boolean
   playlist: PlaylistItem | null
   isOwner: boolean
@@ -62,6 +63,9 @@ defineProps<{
   /** 歌单分享人数 */
   shareCount?: number
 }>()
+
+/** 作者展示名：真实昵称优先，其次 userToken，最后 guest */
+const ownerName = computed(() => props.playlist?.nickname || props.playlist?.userToken || 'guest')
 
 const emit = defineEmits<{
   (e: 'update:visible', value: boolean): void

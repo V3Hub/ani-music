@@ -8,9 +8,20 @@
  */
 import { getThumbmark } from '@thumbmarkjs/thumbmarkjs'
 import { useUserStore } from '@/stores/user'
+import type { LoginResult, UserProfile } from '@/types/user'
 import { request } from '@/utils/request'
 
 let pendingBootstrap: Promise<string | null> | null = null
+
+/** 用户名密码登录（不开放注册，账号由管理员在数据库创建） */
+export function login(username: string, password: string) {
+  return request.post<LoginResult>('/api/user/login', { username, password })
+}
+
+/** 当前登录用户资料：昵称 + 头像（base64） */
+export function getUserProfile() {
+  return request.get<UserProfile>('/api/user/profile')
+}
 
 export function ensureAutoToken(): Promise<string | null> {
   const userStore = useUserStore()

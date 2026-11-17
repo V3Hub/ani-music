@@ -5,17 +5,18 @@
       <van-icon class="settings-btn" name="setting-o" size="22" @click="emit('openSettings')" />
     </div>
     <div class="owner-content">
-      <div class="user-info">
+      <div class="user-info" @click="emit('openLogin')">
         <van-image
           round
           width="48"
           height="48"
-          :src="`https://api.dicebear.com/7.x/avataaars/svg?seed=${userToken}`"
+          :src="avatarSrc"
         />
         <div class="user-meta">
-          <div>{{ userToken || '游客' }}</div>
-          <div>100关注 100粉丝</div>
+          <div class="user-name">{{ displayName }}</div>
+          <div class="user-hint">{{ hintText }}</div>
         </div>
+        <van-icon class="login-arrow" name="arrow" />
       </div>
       <div class="section-title">
         创建的歌单
@@ -88,9 +89,15 @@
 <script setup lang="ts">
 import type { PlaylistItem, Song } from '@/types/music'
 import WaveBox from '@/components/waveBox/WaveBox.vue'
+import { resolveAvatar } from '@/utils/avatar'
+import { computed } from 'vue'
 
-defineProps<{
+const props = defineProps<{
   userToken: string
+  /** 登录账号的昵称，未登录为空 */
+  nickname: string
+  /** 登录账号的头像（数据库 base64 / data URL），未登录为空 */
+  avatar: string
   playlists: PlaylistItem[]
   playHistory: Song[]
   favoriteSongs: Song[]
@@ -107,7 +114,16 @@ const emit = defineEmits<{
   (e: 'openPlaylist', id: number): void
   (e: 'createPlaylist'): void
   (e: 'openSettings'): void
+  (e: 'openLogin'): void
 }>()
+
+/** 没有上传头像时回退到按 userToken 生成的默认头像 */
+const avatarSrc = computed(() => resolveAvatar(
+  props.avatar,
+  `https://api.dicebear.com/7.x/avataaars/svg?seed=${props.userToken || 'guest'}`,
+))
+const displayName = computed(() => props.nickname || props.userToken || '游客')
+const hintText = computed(() => (props.nickname ? '点击可切换账号' : '点击登录 / 切换账号'))
 
 /** 项目 logo，歌单没有封面时兜底 */
 const LOGO_URL = '/qs.svg'
@@ -160,18 +176,30 @@ function coverOf(pic?: string) {
     display: flex;
     align-items: center;
     gap: 12px;
+    cursor: pointer;
+
+    .login-arrow {
+      flex-shrink: 0;
+      margin-left: auto;
+      font-size: 14px;
+      opacity: 0.4;
+    }
 
     .user-meta {
       display: flex;
       flex-direction: column;
       gap: 6px;
+      min-width: 0;
 
-      > div:first-child {
+      .user-name {
+        overflow: hidden;
         font-size: 16px;
         font-weight: 500;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
 
-      > div:last-child {
+      .user-hint {
         font-size: 12px;
         opacity: 0.55;
       }
@@ -200,7 +228,7 @@ function coverOf(pic?: string) {
     box-sizing: border-box;
     padding: 16px;
     object-fit: contain;
-    background: rgba(128, 128, 128, 0.16);
+    background: rgba(255, 255, 255, 0.05);
   }
 
   .playlist-list {

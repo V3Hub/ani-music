@@ -17,6 +17,7 @@ import {
 } from '@/api/music'
 import { PlaylistSource } from '@/constants/playlist'
 import { toUserToken } from '@/composables/player/usePlaylistDiscovery'
+import { useUserProfileStore } from '@/stores/userProfile'
 import { useUserStore } from '@/stores/user'
 import { showToast } from 'vant'
 import type { Ref } from 'vue'
@@ -26,6 +27,7 @@ export const GUEST_USER_TOKEN = 'guest'
 
 export function usePlaylistLibrary({ favoriteSongs }: { favoriteSongs: Ref<Song[]> }) {
   const userStore = useUserStore()
+  const profileStore = useUserProfileStore()
   // token 形如 `<用户标识>.<签名>`，取前半段作为当前用户标识
   const userToken = computed(() => {
     const token = userStore.getToken()
@@ -77,6 +79,8 @@ export function usePlaylistLibrary({ favoriteSongs }: { favoriteSongs: Ref<Song[
         count: songs.length,
         source: PlaylistSource.favorite,
         userToken: userToken.value,
+        nickname: profileStore.nickname,
+        avatar: profileStore.avatar,
       },
       songs,
     })
@@ -96,6 +100,8 @@ export function usePlaylistLibrary({ favoriteSongs }: { favoriteSongs: Ref<Song[
           count: songs.length,
           source: PlaylistSource.playRecord,
           userToken: userToken.value,
+          nickname: profileStore.nickname,
+          avatar: profileStore.avatar,
         },
         songs,
       }
@@ -123,6 +129,8 @@ export function usePlaylistLibrary({ favoriteSongs }: { favoriteSongs: Ref<Song[
         count: matched?.count ?? 0,
         source: PlaylistSource.playlist,
         userToken: authorToken,
+        nickname: matched?.nickname ?? '',
+        avatar: matched?.avatar ?? '',
       },
       songs: [],
     })

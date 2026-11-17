@@ -10,8 +10,26 @@
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior: none;
 }
+/* 弹层遮罩（popup / dialog / notify 等）全部透明，让深色主题透出来 */
 .van-overlay {
   background-color: transparent !important;
+}
+
+/* ===== Toast =====
+ * Vant Toast 基于 Popup 渲染，DOM 同时带 .van-popup 和 .van-toast 两个 class。
+ * .van-popup 默认背景是白色 (--van-popup-background: #fff)，
+ * .van-toast 默认背景是半透明黑 (--van-toast-background: rgba(0,0,0,.7))。
+ * 这里显式覆盖，确保 Toast 始终是深底白字，不受 CSS 变量或加载顺序影响。 */
+.van-toast {
+  background-color: rgba(0, 0, 0, 0.72) !important;
+  background-image: none !important;
+  color: #fff !important;
+
+  .van-toast__text,
+  .van-toast__loading,
+  .van-toast .van-icon {
+    color: #fff !important;
+  }
 }
 /* 电脑端：自定义滚动条，细圆角且贴合深色主题 */
 @media (min-width: 768px) {

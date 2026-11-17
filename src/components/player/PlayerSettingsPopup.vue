@@ -32,6 +32,16 @@
             </li>
           </ul>
         </section>
+
+        <!-- 账号 -->
+        <section v-if="loggedIn" class="settings-section">
+          <div class="section-title">账号</div>
+          <ul class="section-list">
+            <li class="section-item" @click="emit('logout')">
+              <span class="item-label item-danger">退出登录</span>
+            </li>
+          </ul>
+        </section>
       </div>
     </div>
 
@@ -87,11 +97,14 @@ defineProps<{
   currentSource: string
   sleepLabel: string
   sleepMinutes: number
+  /** 是否已登录（未登录不展示退出登录） */
+  loggedIn: boolean
 }>()
 
 const emit = defineEmits<{
   (e: 'confirmSource', sourceValue: string): void
   (e: 'setSleepTimer', minutes: number): void
+  (e: 'logout'): void
 }>()
 
 const visible = defineModel<boolean>('visible', { required: true })
@@ -197,6 +210,10 @@ function onPickSleep(minutes: number) {
 
   .item-label {
     font-size: 15px;
+  }
+
+  .item-danger {
+    color: #ee5a5a;
   }
 
   .item-value {

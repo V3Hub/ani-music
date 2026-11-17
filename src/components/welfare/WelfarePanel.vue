@@ -145,8 +145,8 @@ onMounted(() => {
   overflow: hidden;
   padding: 22px 18px;
   border-radius: 20px;
-  background: linear-gradient(135deg, #ff512f 0%, #ff7a18 48%, #ffb02e 100%);
-  box-shadow: 0 14px 32px rgba(255, 90, 30, 0.32);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
 
   .hero-glow {
     position: absolute;
@@ -155,7 +155,7 @@ onMounted(() => {
     width: 220px;
     height: 220px;
     border-radius: 50%;
-    background: radial-gradient(circle, rgba(255, 255, 255, 0.55), transparent 65%);
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.12), transparent 65%);
     animation: glow-float 5s ease-in-out infinite;
   }
 
@@ -164,7 +164,7 @@ onMounted(() => {
     font-size: 11px;
     letter-spacing: 3px;
     font-weight: 600;
-    color: rgba(255, 255, 255, 0.85);
+    color: rgba(255, 255, 255, 0.6);
   }
 
   .hero-title {
@@ -174,14 +174,13 @@ onMounted(() => {
     font-weight: 800;
     letter-spacing: 1px;
     color: #fff;
-    text-shadow: 0 4px 16px rgba(120, 30, 0, 0.35);
   }
 
   .hero-sub {
     position: relative;
     margin: 0 0 14px;
     font-size: 12.5px;
-    color: rgba(255, 255, 255, 0.9);
+    color: rgba(255, 255, 255, 0.65);
   }
 
   .hero-chips {
@@ -194,10 +193,9 @@ onMounted(() => {
       padding: 4px 10px;
       border-radius: 999px;
       font-size: 11px;
-      color: #fff;
-      background: rgba(255, 255, 255, 0.2);
-      border: 1px solid rgba(255, 255, 255, 0.28);
-      backdrop-filter: blur(4px);
+      color: rgba(255, 255, 255, 0.75);
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.15);
     }
   }
 }
@@ -218,12 +216,13 @@ onMounted(() => {
   border-radius: 16px;
   text-decoration: none;
   color: var(--theme-text, #fff);
-  background: rgba(127, 127, 127, 0.12);
-  border: 1px solid rgba(127, 127, 127, 0.16);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   overflow: hidden;
   transition:
     transform 0.18s ease,
-    border-color 0.18s ease;
+    border-color 0.18s ease,
+    background-color 0.18s ease;
   animation: coupon-in 0.4s ease both;
 
   // 左侧品牌色光带
@@ -240,21 +239,26 @@ onMounted(() => {
   &:active {
     transform: scale(0.975);
     border-color: var(--brand);
+    background: rgba(255, 255, 255, 0.08);
   }
 
   &.hot {
-    background: rgba(255, 176, 32, 0.1);
-    border-color: rgba(255, 176, 32, 0.35);
+    background: rgba(255, 255, 255, 0.07);
+    border-color: rgba(255, 176, 32, 0.3);
   }
 
   .hot-flag {
     position: absolute;
     top: 0;
     right: 0;
-    padding: 3px 9px;
+    padding: 3px 10px;
     font-size: 10px;
-    color: #3a2400;
-    background: linear-gradient(135deg, #ffd76a, #ffab00);
+    font-weight: 600;
+    letter-spacing: 0.4px;
+    color: #ffcf70;
+    background: rgba(255, 176, 32, 0.14);
+    border-left: 1px solid rgba(255, 176, 32, 0.22);
+    border-bottom: 1px solid rgba(255, 176, 32, 0.22);
     border-bottom-left-radius: 12px;
   }
 
@@ -305,13 +309,21 @@ onMounted(() => {
     display: flex;
     align-items: center;
     gap: 2px;
-    padding: 8px 14px;
+    padding: 8px 15px;
     border-radius: 999px;
     font-size: 12.5px;
     font-weight: 600;
     color: #fff;
-    background: linear-gradient(135deg, var(--brand), color-mix(in srgb, var(--brand) 70%, #000));
-    box-shadow: 0 6px 16px color-mix(in srgb, var(--brand) 35%, transparent);
+    background: rgba(255, 255, 255, 0.14);
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    transition:
+      background-color 0.18s ease,
+      border-color 0.18s ease;
+  }
+
+  &:active .coupon-get {
+    background: rgba(255, 255, 255, 0.22);
+    border-color: rgba(255, 255, 255, 0.32);
   }
 }
 

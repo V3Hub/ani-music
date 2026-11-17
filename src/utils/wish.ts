@@ -1,12 +1,18 @@
-/** 心愿墙展示工具：用户头像 / userToken 名字、相对时间 */
+/** 心愿墙展示工具：用户头像 / 昵称、相对时间 */
+import { resolveAvatar } from '@/utils/avatar'
 
-/** 与歌曲评论一致的 DiceBear 头像，seed 为 userId，同一用户头像固定 */
-export function wishAvatarUrl(userId: string) {
-  return `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(userId || 'guest')}`
+/** 有真实头像时用真实头像，否则用 DiceBear（seed 为 userId，同一用户头像固定） */
+export function wishAvatarUrl(userId: string, avatar?: string) {
+  return resolveAvatar(
+    avatar,
+    `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(userId || 'guest')}`,
+  )
 }
 
-/** 与歌单 / 评论一致：数字 userId 展示为 userToken（base64），其他原样展示 */
-export function wishUserName(userId: string) {
+/** 有真实昵称优先展示，否则数字 userId 展示为 userToken（base64） */
+export function wishUserName(userId: string, nickname?: string) {
+  if (nickname)
+    return nickname
   const value = String(userId || '')
   const numeric = Number(value)
   if (value && Number.isFinite(numeric))

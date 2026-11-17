@@ -7,6 +7,8 @@ const headers = {
 }
 /** token 签名密钥，与前端的鉴权约定保持一致 */
 const SECRET_KEY = 'musapi.v3hub.site'
+/** 密码哈希盐值：前端「密码生成工具」与服务端共用，保证生成的存储值可直接登录 */
+const PASSWORD_SALT = 'ani-music'
 /** 最近播放 / 收藏 / 歌单的最大保存条数 */
 const MAX_PLAYLIST_COUNT = 100
 
@@ -166,6 +168,8 @@ async function trimOldestIfFull(DB, table, userId, total) {
 /** 路由表：path → method → 处理函数，统一由 fetch 分发 */
 const ROUTES = {
   '/api/user/auto': { POST: handleAutoLogin },
+  '/api/user/login': { POST: handleUserLogin },
+  '/api/user/profile': { GET: handleGetUserProfile },
   '/api/song/add': { POST: handleUpsertSong },
   '/api/play/report': { POST: handleReportPlay },
   '/api/recommend/hot': { GET: handleGetHotList },
@@ -210,6 +214,7 @@ const ROUTES = {
 /** 免 token 白名单：自动登录；播放直链跳转（audio 元素请求无法携带 Authorization 头） */
 const PUBLIC_PATHS = new Set([
   '/api/user/auto',
+  '/api/user/login',
   '/api/song/stream',
 ])
 
@@ -299,7 +304,7 @@ export default {
         COUNT(*) AS week_plays,
         0 AS day_plays
       FROM play_records
-      WHERE play_time >= DATETIME(DATE('now', '-6 day', '+8 hour'))
+      WHERE play_time >= DATETIME(DATE('now', '-6 day'))
       GROUP BY song_id;
     `,
       ).run()
@@ -311,19 +316,21 @@ export default {
         SELECT COUNT(*)
         FROM play_records pr
         WHERE pr.song_id = hot_song_stat.song_id
-          AND play_time >= DATETIME(DATE('now', '-1 day', '+8 hour'))
-          AND play_time < DATETIME(DATE('now', '+8 hour'))
+          AND play_time >= DATETIME(DATE('now', '-1 day'))
+          AND play_time < DATETIME(DATE('now'))
       ), 0);
     `,
       ).run()
 
+      // 清理 30 天未活跃的游客账号；有用户名的正式账号保留
       await DB.prepare(
         `
       DELETE FROM users
-      WHERE id NOT IN (
+      WHERE (username IS NULL OR username = '')
+        AND id NOT IN (
         SELECT DISTINCT user_id
         FROM play_records
-        WHERE play_time >= DATETIME(DATE('now', '-30 day', '+8 hour'))
+        WHERE play_time >= DATETIME(DATE('now', '-30 day'))
       );
     `,
       ).run()
@@ -331,7 +338,7 @@ export default {
       await DB.prepare(
         `
         DELETE FROM play_records
-        WHERE play_time < DATETIME(DATE('now', '-90 day', '+8 hour'));
+        WHERE play_time < DATETIME(DATE('now', '-90 day'));
       `,
       ).run()
     } catch (err) {
@@ -384,6 +391,85 @@ async function handleAutoLogin(request, env) {
   await DB.prepare(`INSERT INTO users (finger_id) VALUES (?)`).bind(fingerId).run()
   const row = await DB.prepare(`SELECT last_insert_rowid() AS id`).first()
   return jsonResp({ code: 200, data: await generateToken(row.id) })
+}
+
+/** SHA-256 十六进制摘要 */
+async function sha256Hex(text) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
+  return Array.from(new Uint8Array(buf))
+    .map(byte => byte.toString(16).padStart(2, '0'))
+    .join('')
+}
+
+/** users 行 → 前端用户信息（头像以 base64 / data URL 形式原样下发） */
+function mapUserProfile(row) {
+  return {
+    id: row.id,
+    username: row.username || '',
+    nickname: row.nickname || '',
+    avatar: row.avatar_url || '',
+  }
+}
+
+/**
+ * 记录最近登录时间到 users.last_login（DATETIME，UTC）
+ * 表结构缺少该列时只打日志，不影响登录流程
+ */
+async function touchLastLogin(env, userId) {
+  if (!userId)
+    return
+  try {
+    await env.DB.prepare('UPDATE users SET last_login = DATETIME(\'now\') WHERE id = ?')
+      .bind(userId)
+      .run()
+  } catch (err) {
+    console.error('【last_login 更新失败】', err.message)
+  }
+}
+
+/**
+ * 用户名密码登录 POST /api/user/login
+ * 密码以 SHA-256(密码 + PASSWORD_SALT) 存储，与前端「密码生成工具」输出一致
+ */
+async function handleUserLogin(request, env) {
+  const body = await request.json().catch(() => ({}))
+  const username = String(body.username || '').trim()
+  const password = String(body.password || '')
+  if (!username || !password) {
+    return jsonResp({ code: 400, msg: '请输入用户名和密码' })
+  }
+  const row = await env.DB.prepare(
+    `SELECT id, username, password, nickname, avatar_url FROM users WHERE username = ?`,
+  )
+    .bind(username)
+    .first()
+  if (!row?.id || !row.password) {
+    return jsonResp({ code: 400, msg: '用户名或密码错误' })
+  }
+  const hashed = await sha256Hex(password + PASSWORD_SALT)
+  if (hashed !== row.password) {
+    return jsonResp({ code: 400, msg: '用户名或密码错误' })
+  }
+  await touchLastLogin(env, row.id)
+  return jsonResp({
+    code: 200,
+    msg: '登录成功',
+    data: { token: await generateToken(row.id), user: mapUserProfile(row) },
+  })
+}
+
+/** 当前登录用户信息 GET /api/user/profile */
+async function handleGetUserProfile(request, env) {
+  const userId = getRequestUserId(request)
+  const row = await env.DB.prepare(
+    `SELECT id, username, nickname, avatar_url FROM users WHERE id = ?`,
+  )
+    .bind(userId)
+    .first()
+  if (!row?.id) {
+    return jsonResp({ code: 401, msg: '账号不存在' }, 401)
+  }
+  return jsonResp({ code: 200, msg: '请求成功', data: mapUserProfile(row) })
 }
 
 /**
@@ -857,10 +943,13 @@ async function handleGetMyPlaylists(request, env) {
         SELECT COUNT(*)
         FROM playlist_song ps
         WHERE ps.playlist_id = p.id
-      ) as count
+      ) as count,
+      u.nickname as nickname,
+      u.avatar_url as avatar
     FROM user_playlist p
     LEFT JOIN user_playlist_sub s
       ON p.id = s.playlist_id AND s.user_id = ?
+    LEFT JOIN users u ON u.id = p.user_id
     WHERE p.user_id = ? OR s.user_id = ?
     ORDER BY sort_time DESC
   `,
@@ -1023,13 +1112,16 @@ async function handleGetDiscoverPlaylists(request, env) {
         SELECT COUNT(*)
         FROM playlist_song ps
         WHERE ps.playlist_id = p.id
-      ) as count
+      ) as count,
+      u.nickname as nickname,
+      u.avatar_url as avatar
     FROM user_playlist p
     LEFT JOIN (
       SELECT playlist_id, COUNT(*) AS subscribe_count
       FROM user_playlist_sub
       GROUP BY playlist_id
     ) sub ON p.id = sub.playlist_id
+    LEFT JOIN users u ON u.id = p.user_id
     ORDER BY subscribe_count DESC, p.create_time DESC
     LIMIT ?
   `,
@@ -1066,13 +1158,16 @@ async function handleSearchPlaylists(request, env) {
         SELECT COUNT(*)
         FROM playlist_song ps
         WHERE ps.playlist_id = p.id
-      ) as count
+      ) as count,
+      u.nickname as nickname,
+      u.avatar_url as avatar
     FROM user_playlist p
     LEFT JOIN (
       SELECT playlist_id, COUNT(*) AS subscribe_count
       FROM user_playlist_sub
       GROUP BY playlist_id
     ) sub ON p.id = sub.playlist_id
+    LEFT JOIN users u ON u.id = p.user_id
     WHERE p.name LIKE ?
     ORDER BY subscribe_count DESC, p.create_time DESC
     LIMIT 30
@@ -1110,13 +1205,16 @@ async function handleGetPlaylistInfo(request, env) {
         SELECT COUNT(*)
         FROM playlist_song ps
         WHERE ps.playlist_id = p.id
-      ) as count
+      ) as count,
+      u.nickname as nickname,
+      u.avatar_url as avatar
     FROM user_playlist p
     LEFT JOIN (
       SELECT playlist_id, COUNT(*) AS subscribe_count
       FROM user_playlist_sub
       GROUP BY playlist_id
     ) sub ON p.id = sub.playlist_id
+    LEFT JOIN users u ON u.id = p.user_id
     WHERE p.id = ?
   `,
   )
@@ -1249,8 +1347,8 @@ async function handleReportSongShare(request, env) {
   if (!id) {
     return jsonResp({ code: 400, msg: '参数错误' })
   }
-  await env.DB.prepare('INSERT OR IGNORE INTO share_user (target_type, target_id, user_id, create_time) VALUES (\'song\', ?, ?, ?)')
-    .bind(id, String(userId), Date.now())
+  await env.DB.prepare('INSERT OR IGNORE INTO share_user (target_type, target_id, user_id, create_time) VALUES (\'song\', ?, ?, DATETIME(\'now\'))')
+    .bind(id, String(userId))
     .run()
   const row = await env.DB.prepare('SELECT COUNT(*) AS count FROM share_user WHERE target_type = \'song\' AND target_id = ?').bind(id).first()
   return jsonResp({ code: 200, msg: '分享记录成功', data: { count: row?.count || 0 } })
@@ -1274,8 +1372,8 @@ async function handleReportPlaylistShare(request, env) {
   if (!id) {
     return jsonResp({ code: 400, msg: '参数错误' })
   }
-  await env.DB.prepare('INSERT OR IGNORE INTO share_user (target_type, target_id, user_id, create_time) VALUES (\'playlist\', ?, ?, ?)')
-    .bind(id, String(userId), Date.now())
+  await env.DB.prepare('INSERT OR IGNORE INTO share_user (target_type, target_id, user_id, create_time) VALUES (\'playlist\', ?, ?, DATETIME(\'now\'))')
+    .bind(id, String(userId))
     .run()
   const row = await env.DB.prepare('SELECT COUNT(*) AS count FROM share_user WHERE target_type = \'playlist\' AND target_id = ?').bind(id).first()
   return jsonResp({ code: 200, msg: '分享记录成功', data: { count: row?.count || 0 } })
@@ -1288,18 +1386,33 @@ async function handleReportPlaylistShare(request, env) {
 const COMMENT_MAX_LENGTH = 500
 const COMMENT_PAGE_SIZE = 20
 
+/** 数据库时间值 → 毫秒时间戳：兼容纯数字时间戳与 'YYYY-MM-DD HH:MM:SS'（UTC） */
+function toEpochMs(value) {
+  if (value == null || value === '')
+    return 0
+  if (typeof value === 'number')
+    return value
+  const str = String(value).trim()
+  if (/^\d+$/.test(str))
+    return Number(str)
+  const ms = Date.parse(`${str.replace(' ', 'T')}Z`)
+  return Number.isFinite(ms) ? ms : 0
+}
+
 function mapCommentRow(row, liked, currentUserId) {
   return {
     id: row.id,
     songId: row.song_id,
     userId: row.user_id,
+    nickname: row.nickname || '',
+    avatar: row.avatar || '',
     content: row.content,
     parentId: row.parent_id,
     likeCount: row.like_count,
     replyCount: row.reply_count || 0,
     liked: !!liked,
     mine: String(row.user_id) === String(currentUserId || ''),
-    createTime: row.create_time,
+    createTime: toEpochMs(row.create_time),
   }
 }
 
@@ -1320,9 +1433,12 @@ async function handleGetComments(request, env) {
   const whereParams = parentId ? [songId, parentId] : [songId]
   const order = sort === 'latest' ? 'c.create_time DESC' : 'c.like_count DESC, c.create_time DESC'
   const sql = `SELECT c.*,
+      u.nickname AS nickname,
+      u.avatar_url AS avatar,
       (SELECT COUNT(*) FROM song_comment r WHERE r.parent_id = c.id) AS reply_count,
       EXISTS(SELECT 1 FROM song_comment_like l WHERE l.comment_id = c.id AND l.user_id = ?) AS liked
     FROM song_comment c
+    LEFT JOIN users u ON u.id = c.user_id
     WHERE ${where}
     ORDER BY ${order}
     LIMIT ? OFFSET ?`
@@ -1373,8 +1489,10 @@ async function handleAddComment(request, env) {
 
   const now = Date.now()
   const result = await env.DB.prepare(
-    'INSERT INTO song_comment (song_id, user_id, content, parent_id, like_count, create_time) VALUES (?, ?, ?, ?, 0, ?)',
-  ).bind(songId, String(userId), content, parentId, now).run()
+    `INSERT INTO song_comment (song_id, user_id, content, parent_id, like_count, create_time)
+     VALUES (?, ?, ?, ?, 0, DATETIME('now'))`,
+  ).bind(songId, String(userId), content, parentId).run()
+  const identity = await getUserIdentity(env, userId)
   return jsonResp({
     code: 200,
     msg: '评论成功',
@@ -1382,6 +1500,8 @@ async function handleAddComment(request, env) {
       id: result.meta?.last_row_id,
       songId,
       userId: String(userId),
+      nickname: identity.nickname,
+      avatar: identity.avatar,
       content,
       parentId,
       likeCount: 0,
@@ -2112,20 +2232,30 @@ const WISH_RECENT_DAYS = 30
 const WISH_MAX_LENGTH = 100
 const WISH_MESSAGE_MAX_LENGTH = 200
 const WISH_LIST_LIMIT = 120
-/** 同一用户两次许愿的最短间隔：7 天 */
-const WISH_WEEK_MS = 7 * 24 * 60 * 60 * 1000
+
+/** 读取用户展示信息（昵称 + 头像），用于心愿/评论/歌单等场景 */
+async function getUserIdentity(env, userId) {
+  if (!userId)
+    return { nickname: '', avatar: '' }
+  const row = await env.DB.prepare('SELECT nickname, avatar_url FROM users WHERE id = ?')
+    .bind(userId)
+    .first()
+  return { nickname: row?.nickname || '', avatar: row?.avatar_url || '' }
+}
 
 /** 心愿行 → 前端结构 */
 function mapWishRow(row, userId) {
   return {
     id: row.id,
     userId: String(row.user_id),
+    nickname: row.nickname || '',
+    avatar: row.avatar || '',
     content: row.content,
     likeCount: Number(row.like_count) || 0,
     messageCount: Number(row.message_count) || 0,
     liked: !!row.liked,
     mine: String(row.user_id) === String(userId || ''),
-    createTime: row.create_time,
+    createTime: toEpochMs(row.create_time),
   }
 }
 
@@ -2135,25 +2265,29 @@ function mapWishMessageRow(row, userId) {
     id: row.id,
     wishId: row.wish_id,
     userId: String(row.user_id),
+    nickname: row.nickname || '',
+    avatar: row.avatar || '',
     content: row.content,
     mine: String(row.user_id) === String(userId || ''),
-    createTime: row.create_time,
+    createTime: toEpochMs(row.create_time),
   }
 }
 
 /** 心愿列表 GET /api/wish/list：仅最近 30 天，按点赞数倒序（前端自行取 Top3 + 其余轮动） */
 async function handleGetWishes(request, env) {
   const userId = String(getRequestUserId(request) || '')
-  const cutoff = Date.now() - WISH_RECENT_DAYS * 24 * 60 * 60 * 1000
   const { results } = await env.DB.prepare(
     `SELECT w.*,
+      u.nickname AS nickname,
+      u.avatar_url AS avatar,
       (SELECT COUNT(*) FROM wish_message m WHERE m.wish_id = w.id) AS message_count,
       EXISTS(SELECT 1 FROM wish_like l WHERE l.wish_id = w.id AND l.user_id = ?) AS liked
     FROM wish w
-    WHERE w.create_time >= ?
+    LEFT JOIN users u ON u.id = w.user_id
+    WHERE w.create_time >= DATETIME('now', '-${WISH_RECENT_DAYS} day')
     ORDER BY w.like_count DESC, w.create_time DESC
     LIMIT ?`,
-  ).bind(userId, cutoff, WISH_LIST_LIMIT).all()
+  ).bind(userId, WISH_LIST_LIMIT).all()
   return jsonResp({
     code: 200,
     msg: '获取心愿成功',
@@ -2169,8 +2303,10 @@ async function handleAddWish(request, env) {
   }
   // 每周只能许一个心愿
   const recentWish = await env.DB.prepare(
-    'SELECT create_time FROM wish WHERE user_id = ? AND create_time >= ? ORDER BY create_time DESC LIMIT 1',
-  ).bind(String(userId), Date.now() - WISH_WEEK_MS).first()
+    `SELECT create_time FROM wish
+     WHERE user_id = ? AND create_time >= DATETIME('now', '-7 day')
+     ORDER BY create_time DESC LIMIT 1`,
+  ).bind(String(userId)).first()
   if (recentWish) {
     return jsonResp({ code: 400, msg: '本周心愿已经挂上墙啦，下周再来许愿吧' })
   }
@@ -2185,14 +2321,18 @@ async function handleAddWish(request, env) {
 
   const now = Date.now()
   const result = await env.DB.prepare(
-    'INSERT INTO wish (user_id, content, like_count, create_time) VALUES (?, ?, 0, ?)',
-  ).bind(String(userId), content, now).run()
+    `INSERT INTO wish (user_id, content, like_count, create_time)
+     VALUES (?, ?, 0, DATETIME('now'))`,
+  ).bind(String(userId), content).run()
+  const identity = await getUserIdentity(env, userId)
   return jsonResp({
     code: 200,
     msg: '许愿成功',
     data: {
       id: result.meta?.last_row_id,
       userId: String(userId),
+      nickname: identity.nickname,
+      avatar: identity.avatar,
       content,
       likeCount: 0,
       messageCount: 0,
@@ -2225,8 +2365,8 @@ async function handleToggleWishLike(request, env) {
   if (likedRow) {
     await env.DB.prepare('DELETE FROM wish_like WHERE wish_id = ? AND user_id = ?').bind(id, String(userId)).run()
   } else {
-    await env.DB.prepare('INSERT OR IGNORE INTO wish_like (wish_id, user_id, create_time) VALUES (?, ?, ?)')
-      .bind(id, String(userId), Date.now())
+    await env.DB.prepare('INSERT OR IGNORE INTO wish_like (wish_id, user_id, create_time) VALUES (?, ?, DATETIME(\'now\'))')
+      .bind(id, String(userId))
       .run()
   }
 
@@ -2245,7 +2385,14 @@ async function handleGetWishMessages(request, env) {
     return jsonResp({ code: 400, msg: '参数错误' })
   }
   const { results } = await env.DB.prepare(
-    'SELECT * FROM wish_message WHERE wish_id = ? ORDER BY create_time ASC LIMIT 200',
+    `SELECT m.*,
+      u.nickname AS nickname,
+      u.avatar_url AS avatar
+    FROM wish_message m
+    LEFT JOIN users u ON u.id = m.user_id
+    WHERE m.wish_id = ?
+    ORDER BY m.create_time ASC
+    LIMIT 200`,
   ).bind(wishId).all()
   return jsonResp({
     code: 200,
@@ -2276,9 +2423,11 @@ async function handleAddWishMessage(request, env) {
 
   const now = Date.now()
   const result = await env.DB.prepare(
-    'INSERT INTO wish_message (wish_id, user_id, content, create_time) VALUES (?, ?, ?, ?)',
-  ).bind(wishId, String(userId), content, now).run()
+    `INSERT INTO wish_message (wish_id, user_id, content, create_time)
+     VALUES (?, ?, ?, DATETIME('now'))`,
+  ).bind(wishId, String(userId), content).run()
   const countRow = await env.DB.prepare('SELECT COUNT(*) AS count FROM wish_message WHERE wish_id = ?').bind(wishId).first()
+  const identity = await getUserIdentity(env, userId)
   return jsonResp({
     code: 200,
     msg: '留言成功',
@@ -2286,6 +2435,8 @@ async function handleAddWishMessage(request, env) {
       id: result.meta?.last_row_id,
       wishId,
       userId: String(userId),
+      nickname: identity.nickname,
+      avatar: identity.avatar,
       content,
       mine: true,
       createTime: now,
