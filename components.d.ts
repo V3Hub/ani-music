@@ -10,6 +10,7 @@ declare module 'vue' {
     AddToPlaylistSheet: typeof import('./src/components/playlist/AddToPlaylistSheet.vue')['default']
     CreatePlaylistPopup: typeof import('./src/components/playlist/CreatePlaylistPopup.vue')['default']
     DiscoverPanel: typeof import('./src/components/discover/DiscoverPanel.vue')['default']
+    EmojiPicker: typeof import('./src/components/wish/EmojiPicker.vue')['default']
     ListeningModeSidebar: typeof import('./src/components/player/ListeningModeSidebar.vue')['default']
     OwnerPanel: typeof import('./src/components/owner/OwnerPanel.vue')['default']
     PlaybackQueuePopup: typeof import('./src/components/player/PlaybackQueuePopup.vue')['default']
@@ -33,5 +34,7 @@ declare module 'vue' {
     VanSlider: typeof import('vant/es')['Slider']
     WaveBox: typeof import('./src/components/waveBox/WaveBox.vue')['default']
     WelfarePanel: typeof import('./src/components/welfare/WelfarePanel.vue')['default']
+    WishDetailPopup: typeof import('./src/components/wish/WishDetailPopup.vue')['default']
+    WishPanel: typeof import('./src/components/wish/WishPanel.vue')['default']
   }
 }

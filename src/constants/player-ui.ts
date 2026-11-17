@@ -35,8 +35,8 @@ export interface ListeningSceneOption {
 }
 
 export const LISTENING_SCENES: ListeningSceneOption[] = [
-  { value: 'library', label: '图书馆', icon: 'book-o' },
-  { value: 'emo', label: '深夜EMO', icon: 'moon-o' },
+  { value: 'library', label: '图书馆', icon: 'notes-o' },
+  { value: 'emo', label: '深夜EMO', icon: 'star-o' },
   { value: 'dj', label: 'DJ模式', icon: 'music-o' },
   { value: 'sleep', label: '助眠模式', icon: 'closed-eye' },
 ]
@@ -49,7 +49,7 @@ export interface PlayerNavItem {
 
 export const PLAYER_NAV_ITEMS: PlayerNavItem[] = [
   { label: '发现', key: 'discover' },
-  { label: '听抖音', key: 'rank' },
+  { label: '心愿墙', key: 'wish' },
   { label: '音乐', key: 'music' },
   { label: '福利', key: 'benefit' },
   { label: '我的', key: 'owner' },

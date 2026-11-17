@@ -197,6 +197,11 @@ const ROUTES = {
   '/api/song/comment/count': { GET: handleGetCommentCount },
   '/api/song/comment/like': { POST: handleToggleCommentLike },
   '/api/song/comment/delete': { POST: handleDeleteComment },
+  '/api/wish/list': { GET: handleGetWishes },
+  '/api/wish/add': { POST: handleAddWish },
+  '/api/wish/like': { POST: handleToggleWishLike },
+  '/api/wish/messages': { GET: handleGetWishMessages },
+  '/api/wish/message/add': { POST: handleAddWishMessage },
   '/api/playlist/share': { GET: handleGetPlaylistShareCount, POST: handleReportPlaylistShare },
   '/api/song/theme-color': { GET: handleGetSongThemeColor },
   '/api/song/meta': { POST: handleUpdateSongMeta },
@@ -2099,4 +2104,192 @@ function skipEntropy(data, start) {
 /** 读取大端 16 位整数（JPEG 段长度等） */
 function readU16(bytes, offset) {
   return (bytes[offset] << 8) | bytes[offset + 1]
+}
+
+// ==================== 心愿墙 ====================
+/** 心愿墙：wish / wish_like / wish_message 三张表由人工建表；只展示最近 30 天的心愿 */
+const WISH_RECENT_DAYS = 30
+const WISH_MAX_LENGTH = 100
+const WISH_MESSAGE_MAX_LENGTH = 200
+const WISH_LIST_LIMIT = 120
+/** 同一用户两次许愿的最短间隔：7 天 */
+const WISH_WEEK_MS = 7 * 24 * 60 * 60 * 1000
+
+/** 心愿行 → 前端结构 */
+function mapWishRow(row, userId) {
+  return {
+    id: row.id,
+    userId: String(row.user_id),
+    content: row.content,
+    likeCount: Number(row.like_count) || 0,
+    messageCount: Number(row.message_count) || 0,
+    liked: !!row.liked,
+    mine: String(row.user_id) === String(userId || ''),
+    createTime: row.create_time,
+  }
+}
+
+/** 留言行 → 前端结构 */
+function mapWishMessageRow(row, userId) {
+  return {
+    id: row.id,
+    wishId: row.wish_id,
+    userId: String(row.user_id),
+    content: row.content,
+    mine: String(row.user_id) === String(userId || ''),
+    createTime: row.create_time,
+  }
+}
+
+/** 心愿列表 GET /api/wish/list：仅最近 30 天，按点赞数倒序（前端自行取 Top3 + 其余轮动） */
+async function handleGetWishes(request, env) {
+  const userId = String(getRequestUserId(request) || '')
+  const cutoff = Date.now() - WISH_RECENT_DAYS * 24 * 60 * 60 * 1000
+  const { results } = await env.DB.prepare(
+    `SELECT w.*,
+      (SELECT COUNT(*) FROM wish_message m WHERE m.wish_id = w.id) AS message_count,
+      EXISTS(SELECT 1 FROM wish_like l WHERE l.wish_id = w.id AND l.user_id = ?) AS liked
+    FROM wish w
+    WHERE w.create_time >= ?
+    ORDER BY w.like_count DESC, w.create_time DESC
+    LIMIT ?`,
+  ).bind(userId, cutoff, WISH_LIST_LIMIT).all()
+  return jsonResp({
+    code: 200,
+    msg: '获取心愿成功',
+    data: (results || []).map(row => mapWishRow(row, userId)),
+  })
+}
+
+/** 发表心愿 POST /api/wish/add { content } */
+async function handleAddWish(request, env) {
+  const userId = getRequestUserId(request)
+  if (!userId) {
+    return jsonResp({ code: 401, msg: '登录后才能许愿' }, 401)
+  }
+  // 每周只能许一个心愿
+  const recentWish = await env.DB.prepare(
+    'SELECT create_time FROM wish WHERE user_id = ? AND create_time >= ? ORDER BY create_time DESC LIMIT 1',
+  ).bind(String(userId), Date.now() - WISH_WEEK_MS).first()
+  if (recentWish) {
+    return jsonResp({ code: 400, msg: '本周心愿已经挂上墙啦，下周再来许愿吧' })
+  }
+  const body = await request.json().catch(() => ({}))
+  const content = String(body.content || '').trim()
+  if (!content) {
+    return jsonResp({ code: 400, msg: '心愿内容不能为空' })
+  }
+  if (content.length > WISH_MAX_LENGTH) {
+    return jsonResp({ code: 400, msg: `心愿最多 ${WISH_MAX_LENGTH} 字` })
+  }
+
+  const now = Date.now()
+  const result = await env.DB.prepare(
+    'INSERT INTO wish (user_id, content, like_count, create_time) VALUES (?, ?, 0, ?)',
+  ).bind(String(userId), content, now).run()
+  return jsonResp({
+    code: 200,
+    msg: '许愿成功',
+    data: {
+      id: result.meta?.last_row_id,
+      userId: String(userId),
+      content,
+      likeCount: 0,
+      messageCount: 0,
+      liked: false,
+      mine: true,
+      createTime: now,
+    },
+  })
+}
+
+/** 心愿点赞 / 取消点赞 POST /api/wish/like { id } */
+async function handleToggleWishLike(request, env) {
+  const userId = getRequestUserId(request)
+  if (!userId) {
+    return jsonResp({ code: 401, msg: '登录后才能点赞' }, 401)
+  }
+  const body = await request.json().catch(() => ({}))
+  const id = Number(body.id)
+  if (!id) {
+    return jsonResp({ code: 400, msg: '参数错误' })
+  }
+  const wish = await env.DB.prepare('SELECT id FROM wish WHERE id = ?').bind(id).first()
+  if (!wish) {
+    return jsonResp({ code: 404, msg: '心愿不存在' }, 404)
+  }
+
+  const likedRow = await env.DB.prepare('SELECT 1 AS liked FROM wish_like WHERE wish_id = ? AND user_id = ?')
+    .bind(id, String(userId))
+    .first()
+  if (likedRow) {
+    await env.DB.prepare('DELETE FROM wish_like WHERE wish_id = ? AND user_id = ?').bind(id, String(userId)).run()
+  } else {
+    await env.DB.prepare('INSERT OR IGNORE INTO wish_like (wish_id, user_id, create_time) VALUES (?, ?, ?)')
+      .bind(id, String(userId), Date.now())
+      .run()
+  }
+
+  const countRow = await env.DB.prepare('SELECT COUNT(*) AS count FROM wish_like WHERE wish_id = ?').bind(id).first()
+  const likeCount = countRow?.count || 0
+  // 同步冗余计数，列表按 like_count 排序
+  await env.DB.prepare('UPDATE wish SET like_count = ? WHERE id = ?').bind(likeCount, id).run()
+  return jsonResp({ code: 200, msg: '操作成功', data: { liked: !likedRow, likeCount } })
+}
+
+/** 心愿留言列表 GET /api/wish/messages?wishId=1 */
+async function handleGetWishMessages(request, env) {
+  const userId = String(getRequestUserId(request) || '')
+  const wishId = Number(new URL(request.url).searchParams.get('wishId'))
+  if (!wishId) {
+    return jsonResp({ code: 400, msg: '参数错误' })
+  }
+  const { results } = await env.DB.prepare(
+    'SELECT * FROM wish_message WHERE wish_id = ? ORDER BY create_time ASC LIMIT 200',
+  ).bind(wishId).all()
+  return jsonResp({
+    code: 200,
+    msg: '获取留言成功',
+    data: (results || []).map(row => mapWishMessageRow(row, userId)),
+  })
+}
+
+/** 给心愿留言 POST /api/wish/message/add { wishId, content } */
+async function handleAddWishMessage(request, env) {
+  const userId = getRequestUserId(request)
+  if (!userId) {
+    return jsonResp({ code: 401, msg: '登录后才能留言' }, 401)
+  }
+  const body = await request.json().catch(() => ({}))
+  const wishId = Number(body.wishId)
+  const content = String(body.content || '').trim()
+  if (!wishId || !content) {
+    return jsonResp({ code: 400, msg: '留言内容不能为空' })
+  }
+  if (content.length > WISH_MESSAGE_MAX_LENGTH) {
+    return jsonResp({ code: 400, msg: `留言最多 ${WISH_MESSAGE_MAX_LENGTH} 字` })
+  }
+  const wish = await env.DB.prepare('SELECT id FROM wish WHERE id = ?').bind(wishId).first()
+  if (!wish) {
+    return jsonResp({ code: 404, msg: '心愿不存在' }, 404)
+  }
+
+  const now = Date.now()
+  const result = await env.DB.prepare(
+    'INSERT INTO wish_message (wish_id, user_id, content, create_time) VALUES (?, ?, ?, ?)',
+  ).bind(wishId, String(userId), content, now).run()
+  const countRow = await env.DB.prepare('SELECT COUNT(*) AS count FROM wish_message WHERE wish_id = ?').bind(wishId).first()
+  return jsonResp({
+    code: 200,
+    msg: '留言成功',
+    data: {
+      id: result.meta?.last_row_id,
+      wishId,
+      userId: String(userId),
+      content,
+      mine: true,
+      createTime: now,
+      messageCount: countRow?.count || 0,
+    },
+  })
 }

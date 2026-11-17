@@ -259,6 +259,14 @@
       </div>
     </div>
     <div id="app"></div>
+
+    <!-- 51.LA 站点统计 -->
+    <script charset="UTF-8" id="LA_COLLECT" src="//sdk.51.la/js-sdk-pro.min.js"></script>
+    <script>
+      // autoTrack 开启事件分析能力，LA.track 才会真正上报
+      LA.init({ id: '3Rr7ToYdA08ODAau', ck: '3Rr7ToYdA08ODAau', autoTrack: true })
+    </script>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

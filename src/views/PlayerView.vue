@@ -60,6 +60,8 @@
 
       <WelfarePanel v-if="currentTab === 'benefit'" />
 
+      <WishPanel v-if="currentTab === 'wish'" />
+
       <div class="bottom-bar">
         <PlayerBottomNav
           :nav-items="navList"
@@ -176,6 +178,7 @@ import SongActionSheet from '@/components/playlist/SongActionSheet.vue'
 import AddToPlaylistSheet from '@/components/playlist/AddToPlaylistSheet.vue'
 import OwnerPanel from '@/components/owner/OwnerPanel.vue'
 import WelfarePanel from '@/components/welfare/WelfarePanel.vue'
+import WishPanel from '@/components/wish/WishPanel.vue'
 
 const player = usePlayerStore()
 

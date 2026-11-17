@@ -27,7 +27,7 @@
         :href="coupon.url"
         target="_blank"
         rel="noopener noreferrer"
-        @click="track(coupon.name)"
+        @click="track(coupon)"
       >
         <span v-if="coupon.hot" class="hot-flag">最热</span>
         <div class="coupon-amount">
@@ -52,7 +52,10 @@
 </template>
 
 <script setup lang="ts">
-const heroChips = ['美团外卖', '淘宝闪购', '京东外卖', '饿了么']
+import { trackPromotion } from '@/utils/analytics'
+import { onMounted } from 'vue'
+
+const heroChips = ['美团外卖', '淘宝闪购', '京东外卖']
 
 interface Coupon {
   name: string
@@ -76,7 +79,7 @@ const coupons: Coupon[] = [
     name: '淘宝闪购',
     desc: '小时达 · 新人专享红包',
     amount: 25,
-    url: 'https://kzurl19.cn/t3rnTi',
+    url: 'https://u.ele.me/ZibYpl5q',
     color: '#ff5000',
   },
   {
@@ -86,19 +89,23 @@ const coupons: Coupon[] = [
     url: 'https://u.jd.com/jObWJr4',
     color: '#e1251b',
   },
-  {
-    name: '饿了么',
-    desc: '大额满减 · 每日可领',
-    amount: 36,
-    url: 'https://u.ele.me/ZibYpl5q',
-    color: '#0085ff',
-  },
 ]
 
-/** 点击埋点：先记录到控制台，便于后续接统计 */
-function track(name: string) {
-  console.info('[welfare] 领取点击：', name)
+/** 推广埋点：记录券点击明细，便于分析各渠道转化 */
+function track(coupon: Coupon) {
+  trackPromotion('coupon_click', {
+    platform: coupon.name,
+    coupon: coupon.desc,
+    amount: coupon.amount,
+    hot: coupon.hot ?? false,
+    target: coupon.url,
+  })
 }
+
+/** 福利页曝光，与点击一起构成转化漏斗 */
+onMounted(() => {
+  trackPromotion('welfare_view', { coupon_count: coupons.length })
+})
 </script>
 
 <style lang="scss" scoped>

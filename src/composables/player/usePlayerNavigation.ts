@@ -6,7 +6,7 @@ import { computed, ref } from 'vue'
 
 export const PLAYER_TABS = {
   discover: 'discover',
-  rank: 'rank',
+  wish: 'wish',
   music: 'music',
   benefit: 'benefit',
   owner: 'owner',
