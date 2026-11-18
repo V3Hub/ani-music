@@ -23,7 +23,7 @@
             v-model="username"
             type="text"
             autocomplete="username"
-            placeholder="请输入用户名"
+            placeholder="用户名 / 手机号 / 邮箱"
           >
         </label>
         <label class="field">
@@ -45,57 +45,46 @@
       </form>
 
       <div class="login-tips">
-        <p>本应用不开放注册，账号由管理员分配</p>
-        <button type="button" class="tool-link" @click="toolVisible = true">
-          <van-icon name="shield-o" />
-          密码生成工具
-        </button>
+        <p>
+          还没有账号？
+          <button type="button" class="register-link" @click="router.push('/register')">
+            注册会员
+          </button>
+        </p>
       </div>
     </main>
 
+    <!-- 账号命中多个用户时，选择本次登录的账号 -->
     <van-popup
-      v-model:show="toolVisible"
+      v-model:show="chooseVisible"
       position="bottom"
       round
       teleport="body"
-      class="pwd-tool"
+      class="account-choose"
     >
-      <div class="tool-wrap">
-        <div class="tool-head">
-          <span class="tool-title">密码生成工具</span>
-          <button type="button" class="tool-close" @click="toolVisible = false">关闭</button>
+      <div class="choose-sheet">
+        <div class="choose-title">
+          选择要登录的账号
         </div>
-        <div class="tool-row">
-          <input
-            v-model="toolPassword"
-            class="tool-input"
-            type="text"
-            placeholder="输入密码或点击随机生成"
-            @input="toolHash = ''"
+        <p class="choose-hint">
+          该账号匹配到多个用户，请选择本次登录的账号
+        </p>
+        <ul class="choose-list">
+          <li
+            v-for="item in candidates"
+            :key="item.id"
+            class="choose-item"
+            @click="loginAs(item.id)"
           >
-          <button type="button" class="tool-btn ghost" @click="fillRandom">随机生成</button>
-        </div>
-
-        <div class="tool-hash">
-          <div class="tool-hash-head">
-            <span>密码存储值</span>
-            <button
-              type="button"
-              class="tool-copy"
-              :disabled="!toolHash"
-              @click="copyHash"
-            >
-              复制
-            </button>
-          </div>
-          <div class="tool-hash-value" :class="{ empty: !toolHash }">
-            {{ toolHash || '点击下方按钮生成' }}
-          </div>
-        </div>
-
-        <button type="button" class="submit-btn tool-submit" @click="generateHash">
-          生成存储值
-        </button>
+            <img class="choose-avatar" :src="candidateAvatar(item)" alt="">
+            <div class="choose-meta">
+              <span class="choose-name">{{ item.nickname || item.username || `用户 ${item.id}` }}</span>
+              <span class="choose-username">@{{ item.username || item.id }}</span>
+            </div>
+            <VipBadge :level="item.vipLevel" small />
+            <van-icon name="arrow" class="choose-arrow" />
+          </li>
+        </ul>
       </div>
     </van-popup>
   </div>
@@ -103,10 +92,12 @@
 
 <script setup lang="ts">
 import { login } from '@/api/user'
+import VipBadge from '@/components/common/VipBadge.vue'
 import { LOGIN_RETURN_OWNER_KEY } from '@/constants/auth'
 import { useUserStore } from '@/stores/user'
 import { useUserProfileStore } from '@/stores/userProfile'
-import { hashPassword, randomPassword } from '@/utils/password'
+import type { LoginCandidate } from '@/types/user'
+import { resolveAvatar } from '@/utils/avatar'
 import { showToast } from 'vant'
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -121,26 +112,44 @@ const username = ref('')
 const password = ref('')
 const showPassword = ref(false)
 const loading = ref(false)
+/** 账号命中多个用户时的候选列表 */
+const candidates = ref<LoginCandidate[]>([])
+const chooseVisible = ref(false)
 
-const toolVisible = ref(false)
-const toolPassword = ref('')
-const toolHash = ref('')
+function candidateAvatar(item: LoginCandidate) {
+  return resolveAvatar(
+    item.avatar,
+    `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(item.username || String(item.id))}`,
+  )
+}
 
 /** 登录：写入 token 与资料后回到首页，「我的」页在挂载时读取标记自动切回 */
 async function submit() {
+  await doLogin()
+}
+
+/** userId 为空时先按账号密码匹配；命中多个账号则弹出选择，选中后带上 userId 重新登录 */
+async function doLogin(userId?: number) {
   const name = username.value.trim()
   if (!name || !password.value) {
-    showToast('请输入用户名和密码')
+    showToast('请输入账号和密码')
     return
   }
   if (loading.value)
     return
   loading.value = true
   try {
-    const result = await login(name, password.value)
+    const result = await login(name, password.value, userId)
+    if ('needChoose' in result) {
+      candidates.value = result.accounts
+      chooseVisible.value = true
+      return
+    }
     userStore.setToken(result.token)
     profileStore.applyProfile(result.user)
+    userStore.saveAccount(result.user, result.token)
     sessionStorage.setItem(LOGIN_RETURN_OWNER_KEY, '1')
+    chooseVisible.value = false
     showToast('登录成功')
     router.replace('/')
   } catch {
@@ -150,37 +159,15 @@ async function submit() {
   }
 }
 
+function loginAs(userId: number) {
+  chooseVisible.value = false
+  doLogin(userId)
+}
+
+/** 返回首页时切回「我的」页 */
 function goBack() {
+  sessionStorage.setItem(LOGIN_RETURN_OWNER_KEY, '1')
   router.replace('/')
-}
-
-async function fillRandom() {
-  toolPassword.value = randomPassword()
-  await generateHash()
-}
-
-async function generateHash() {
-  if (!toolPassword.value) {
-    showToast('请先输入密码')
-    return
-  }
-  try {
-    toolHash.value = await hashPassword(toolPassword.value)
-  } catch (err) {
-    console.error('[password] hash 失败', err)
-    showToast('哈希失败：请在 HTTPS 或 localhost 环境下使用')
-  }
-}
-
-async function copyHash() {
-  if (!toolHash.value)
-    return
-  try {
-    await navigator.clipboard.writeText(toolHash.value)
-    showToast('已复制')
-  } catch {
-    showToast('复制失败，请长按选择')
-  }
 }
 </script>
 
@@ -398,148 +385,95 @@ async function copyHash() {
     opacity: 0.4;
   }
 
-  .tool-link {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    padding: 6px 14px;
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.05);
-    color: rgba(255, 255, 255, 0.65);
+  .register-link {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: #a78bfa;
     font-family: inherit;
     font-size: 12px;
     cursor: pointer;
   }
 }
 
-.pwd-tool {
-  background: var(--popup-bg);
+.account-choose {
+  background: var(--popup-bg-raised, #1b1b24);
 }
 
-.tool-wrap {
-  padding: 18px 20px calc(18px + env(safe-area-inset-bottom));
+.choose-sheet {
+  padding: 4px 20px calc(20px + env(safe-area-inset-bottom));
   color: #fff;
 }
 
-.tool-head {
+.choose-title {
+  padding: 16px 0 6px;
+  text-align: center;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.choose-hint {
+  margin: 0 0 14px;
+  text-align: center;
+  font-size: 12px;
+  opacity: 0.45;
+}
+
+.choose-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.choose-item {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-
-  .tool-title {
-    font-size: 16px;
-    font-weight: 600;
-  }
-
-  .tool-close {
-    border: 0;
-    background: transparent;
-    color: rgba(255, 255, 255, 0.5);
-    font-size: 13px;
-    cursor: pointer;
-  }
-}
-
-.tool-desc {
-  margin: 10px 0 16px;
-  font-size: 12px;
-  line-height: 1.6;
-  opacity: 0.5;
-}
-
-.tool-row {
-  margin-top: 14px;
-  display: flex;
-  gap: 10px;
-
-  .tool-input {
-    flex: 1;
-    min-width: 0;
-    height: 44px;
-    padding: 0 12px;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 12px;
-    outline: none;
-    background: rgba(255, 255, 255, 0.06);
-    color: #fff;
-    font-family: inherit;
-    font-size: 14px;
-  }
-
-  .tool-input::placeholder {
-    color: rgba(255, 255, 255, 0.32);
-  }
-
-  .tool-btn {
-    flex-shrink: 0;
-    height: 44px;
-    padding: 0 14px;
-    border: 1px solid rgba(255, 255, 255, 0.16);
-    border-radius: 12px;
-    background: rgba(255, 255, 255, 0.06);
-    color: rgba(255, 255, 255, 0.8);
-    font-family: inherit;
-    font-size: 13px;
-    cursor: pointer;
-  }
-}
-
-.tool-hash {
-  margin-top: 14px;
-  padding: 12px;
+  gap: 12px;
+  padding: 12px 14px;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.06);
+  cursor: pointer;
 
-  .tool-hash-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 8px;
-    font-size: 12px;
-    opacity: 0.6;
-  }
-
-  .tool-copy {
-    padding: 3px 10px;
-    border: 1px solid rgba(255, 255, 255, 0.16);
-    border-radius: 999px;
-    background: transparent;
-    color: rgba(255, 255, 255, 0.75);
-    font-family: inherit;
-    font-size: 11px;
-    cursor: pointer;
-
-    &:disabled {
-      opacity: 0.3;
-      cursor: not-allowed;
-    }
-  }
-
-  .tool-hash-value {
-    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-    font-size: 11px;
-    line-height: 1.6;
-    word-break: break-all;
-    user-select: all;
-
-    &.empty {
-      font-family: inherit;
-      opacity: 0.35;
-      user-select: none;
-    }
+  &:active {
+    background: rgba(255, 255, 255, 0.1);
   }
 }
 
-.tool-submit {
-  width: 100%;
-  margin-top: 14px;
+.choose-avatar {
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  object-fit: cover;
 }
 
-.tool-note {
-  margin: 14px 0 0;
+.choose-meta {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.choose-name {
+  overflow: hidden;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.choose-username {
   font-size: 11px;
-  line-height: 1.7;
-  opacity: 0.38;
+  opacity: 0.45;
+}
+
+.choose-arrow {
+  flex-shrink: 0;
+  font-size: 14px;
+  opacity: 0.4;
 }
 </style>

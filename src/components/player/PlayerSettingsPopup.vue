@@ -4,7 +4,7 @@
     position="right"
     :style="{ width: '100%', height: '100%' }"
     class="settings-popup"
-    @closed="reset"
+    @closed="onClosed"
   >
     <div class="settings-wrap" :style="swipeStyle" v-on="handlers">
       <div class="settings-header">
@@ -38,8 +38,40 @@
         <section v-if="loggedIn" class="settings-section">
           <div class="section-title">账号</div>
           <ul class="section-list">
+            <li v-if="hasSwitchable" class="section-item" @click="switchVisible = true">
+              <span class="item-label">切换账号</span>
+              <span class="item-value">
+                <van-icon name="arrow" size="14" class="item-arrow" />
+              </span>
+            </li>
             <li class="section-item" @click="emit('logout')">
               <span class="item-label item-danger">退出登录</span>
+            </li>
+          </ul>
+        </section>
+
+        <!-- 管理 -->
+        <section v-if="isAdmin" class="settings-section">
+          <div class="section-title">管理</div>
+          <ul class="section-list">
+            <li class="section-item" @click="emit('adminReview')">
+              <span class="item-label">注册审批</span>
+              <span class="item-value">
+                <van-icon name="arrow" size="14" class="item-arrow" />
+              </span>
+            </li>
+          </ul>
+        </section>
+
+        <!-- 其他 -->
+        <section class="settings-section">
+          <div class="section-title">其他</div>
+          <ul class="section-list">
+            <li class="section-item" @click="emit('about')">
+              <span class="item-label">关于</span>
+              <span class="item-value">
+                <van-icon name="arrow" size="14" class="item-arrow" />
+              </span>
             </li>
           </ul>
         </section>
@@ -66,6 +98,33 @@
       </div>
     </van-popup>
 
+    <!-- 切换账号 -->
+    <van-popup v-model:show="switchVisible" position="bottom" round>
+      <div class="switch-sheet">
+        <div class="sheet-title">切换账号</div>
+        <ul class="switch-list">
+          <li
+            v-for="acc in accounts"
+            :key="acc.userId"
+            class="switch-item"
+            :class="{ current: acc.userId === currentUserId }"
+            @click="onSwitchAccount(acc)"
+          >
+            <img class="switch-avatar" :src="accountAvatar(acc)" alt="">
+            <div class="switch-meta">
+              <span class="switch-name">{{ acc.nickname || acc.username }}</span>
+              <span class="switch-username">@{{ acc.username }}</span>
+            </div>
+            <span v-if="acc.userId === currentUserId" class="switch-tag">当前</span>
+            <van-icon v-else name="arrow" class="switch-arrow" />
+          </li>
+        </ul>
+        <p v-if="!accounts.length" class="switch-empty">
+          暂无历史账号
+        </p>
+      </div>
+    </van-popup>
+
     <!-- 定时关闭选择器 -->
     <van-popup v-model:show="sleepVisible" position="bottom" round>
       <div class="sleep-sheet">
@@ -89,35 +148,71 @@
 
 <script setup lang="ts">
 import type { PlaybackSourceOption } from '@/constants/player-ui'
+import type { SavedAccount } from '@/types/user'
 import { SLEEP_OPTIONS } from '@/composables/player/usePlaybackSource'
 import { useSwipeClose } from '@/composables/useSwipeClose'
+import { resolveAvatar } from '@/utils/avatar'
+import { computed, ref } from 'vue'
 
-defineProps<{
+const props = defineProps<{
   sourceLabel: string
   sourceOptions: PlaybackSourceOption[]
   currentSource: string
   sleepLabel: string
   sleepMinutes: number
-  /** 是否已登录（未登录不展示退出登录） */
+  /** 是否已登录（未登录不展示账号设置） */
   loggedIn: boolean
+  /** 是否管理员（展示注册审批入口） */
+  isAdmin?: boolean
+  /** 本地保存的历史登录账号 */
+  accounts: SavedAccount[]
+  /** 当前登录用户 id，用于标记「当前」账号 */
+  currentUserId?: number
 }>()
 
 const emit = defineEmits<{
   (e: 'confirmSource', sourceValue: string): void
   (e: 'setSleepTimer', minutes: number): void
   (e: 'logout'): void
+  (e: 'switchAccount', userId: number): void
+  (e: 'about'): void
+  (e: 'adminReview'): void
 }>()
+
+/** 存在当前账号以外的历史账号时才展示切换入口 */
+const hasSwitchable = computed(() => props.accounts.some(a => a.userId !== props.currentUserId))
 
 const visible = defineModel<boolean>('visible', { required: true })
 const pickerVisible = defineModel<boolean>('pickerVisible', { required: true })
 const sleepVisible = defineModel<boolean>('sleepVisible', { required: true, default: () => false })
+const switchVisible = ref(false)
 
 const { swipeStyle, handlers, reset } = useSwipeClose(() => {
   // 子弹层打开时不响应右滑关闭
-  if (pickerVisible.value || sleepVisible.value)
+  if (pickerVisible.value || sleepVisible.value || switchVisible.value)
     return
   visible.value = false
 })
+
+function onClosed() {
+  reset()
+  switchVisible.value = false
+}
+
+/** 历史账号头像：无自定义头像时按用户名生成 */
+function accountAvatar(account: SavedAccount) {
+  return resolveAvatar(
+    account.avatar,
+    `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(account.username || String(account.userId))}`,
+  )
+}
+
+function onSwitchAccount(account: SavedAccount) {
+  if (account.userId === undefined || account.userId === props.currentUserId)
+    return
+  switchVisible.value = false
+  emit('switchAccount', account.userId)
+}
 
 function openSourcePicker() {
   pickerVisible.value = true
@@ -272,6 +367,95 @@ function onPickSleep(minutes: number) {
 
 .source-sheet-hint {
   margin-top: 14px;
+  text-align: center;
+  font-size: 12px;
+  opacity: 0.4;
+}
+
+/** 切换账号 bottom sheet */
+.switch-sheet {
+  padding: 4px 20px calc(20px + env(safe-area-inset-bottom));
+  color: var(--theme-text, #fff);
+  background: var(--popup-bg-raised);
+
+  .sheet-title {
+    padding: 16px 0;
+    text-align: center;
+    font-size: 16px;
+    font-weight: 600;
+  }
+}
+
+.switch-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.switch-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(128, 128, 128, 0.12);
+  cursor: pointer;
+
+  &.current {
+    cursor: default;
+    opacity: 0.75;
+  }
+}
+
+.switch-avatar {
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.switch-meta {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.switch-name {
+  overflow: hidden;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.switch-username {
+  font-size: 11px;
+  opacity: 0.45;
+}
+
+.switch-tag {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  font-size: 10px;
+}
+
+.switch-arrow {
+  flex-shrink: 0;
+  font-size: 14px;
+  opacity: 0.4;
+}
+
+.switch-empty {
+  margin: 0;
+  padding: 16px 0;
   text-align: center;
   font-size: 12px;
   opacity: 0.4;

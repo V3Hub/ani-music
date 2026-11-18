@@ -8,7 +8,7 @@ import type { Song } from '@/types/music'
  *  - 进度、时长、播放状态由 audio 事件驱动，避免定时器漂移
  *  - 组件只与 Pinia store 响应式引用绑定，不直接操作 audio
  */
-import { addSongToPlayRecord, reportPlay } from '@/api/music'
+import { addSongToPlayRecord, demoteSongInPlaylist } from '@/api/music'
 import { reportSongDuration } from '@/services/song-meta-reporter'
 import { usePlayerStore } from '@/stores/player'
 import { watch } from 'vue'
@@ -63,12 +63,9 @@ function bindEvents() {
     playerStore.setPlaying(false)
   })
 
-  // 当前歌曲自然播放结束：先上报播放记录，单曲循环则重播，否则按模式切下一首
+  // 当前歌曲自然播放结束：单曲循环则重播，否则按模式切下一首
   audio.addEventListener('ended', () => {
     playerStore.setPlaying(false)
-    const song = playerStore.currentSong
-    if (song)
-      reportPlay(song.id).catch(() => {})
     handleEnded()
   })
 
@@ -137,7 +134,7 @@ function handleEnded() {
   }
 }
 
-/** 当前歌曲播放失败时自动切到下一首；整轮都失败则停止 */
+/** 当前歌曲播放失败时自动切到下一首，并把失败歌曲降到歌单末尾；整轮都失败则停止 */
 function autoNextOnError() {
   const total = playerStore.playList.length
   if (total === 0)
@@ -150,10 +147,20 @@ function autoNextOnError() {
     return
   }
 
-  const next = playerStore.nextIndex()
-  if (next < 0)
+  const failedSong = playerStore.currentSong
+  const nextSong = playerStore.playList[playerStore.nextIndex()]
+  if (!failedSong || !nextSong)
     return
-  playerStore.setCurrentIndex(next)
+
+  // 歌单来源时同步把失败歌曲降到歌单末尾，后续打开歌单不会再靠前
+  const source = playerStore.queueSource
+  if (source?.type === 'playlist')
+    demoteSongInPlaylist(failedSong.id, source.playlist.id)
+
+  // 本地队列同样移到末尾，再定位到原本的下一首
+  playerStore.moveSongToEnd(failedSong.id)
+  const nextIndex = playerStore.playList.findIndex(item => item.id === nextSong.id)
+  playerStore.setCurrentIndex(nextIndex >= 0 ? nextIndex : 0)
   playCurrent().catch(() => {})
 }
 

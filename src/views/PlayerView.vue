@@ -37,6 +37,7 @@
       <OwnerPanel
         v-if="currentTab === 'owner'"
         :user-token="userToken"
+        :logged-in="!!profileStore.username"
         :nickname="profileStore.nickname"
         :avatar="profileStore.avatar"
         :playlists="playlists"
@@ -51,6 +52,7 @@
         @create-playlist="createVisible = true"
         @open-settings="openSettings"
         @open-login="router.push('/login')"
+        @open-account="router.push('/account')"
       />
 
       <DiscoverPanel
@@ -113,10 +115,16 @@
       :current-source="source"
       :sleep-label="sleepLabel"
       :sleep-minutes="sleepMinutes"
-      :logged-in="userStore.isLoggedIn"
+      :logged-in="!!profileStore.username"
+      :is-admin="profileStore.isAdmin"
+      :accounts="userStore.savedAccounts"
+      :current-user-id="profileStore.id"
       @confirm-source="confirmSource"
       @set-sleep-timer="setSleepTimer"
       @logout="handleLogout"
+      @switch-account="handleSwitchAccount"
+      @about="openAbout"
+      @admin-review="openAdminReview"
     />
 
     <CreatePlaylistPopup v-model:visible="createVisible" :submitting="creatingPlaylist" @submit="onCreatePlaylist" />
@@ -194,12 +202,41 @@ const router = useRouter()
 const userStore = useUserStore()
 const profileStore = useUserProfileStore()
 
-/** 退出登录：清 token 与资料，回到游客身份并刷新数据（刷新时 main.ts 会重新走指纹自动登录） */
+/** 退出登录：清 token、资料与历史账号，整页重启以游客身份重新初始化后回到登录页 */
 function handleLogout() {
   settingsVisible.value = false
   userStore.clearToken()
+  userStore.clearAccounts()
   profileStore.applyProfile(null)
+  // 整页重载会重建全部内存状态（歌单、队列、资料等），并重新执行一次游客自动登录
+  window.location.replace('/login')
+}
+
+/** 切换到历史账号：换 token 后刷新页面，让各模块按新身份重新拉取 */
+function handleSwitchAccount(userId: number) {
+  const target = userStore.switchAccount(userId)
+  if (!target)
+    return
+  profileStore.applyProfile({
+    id: target.userId,
+    username: target.username,
+    nickname: target.nickname,
+    avatar: target.avatar,
+  })
+  settingsVisible.value = false
   window.location.reload()
+}
+
+/** 打开关于页：先收起设置弹层，返回时回到播放页 */
+function openAbout() {
+  settingsVisible.value = false
+  router.push('/about')
+}
+
+/** 打开注册审批页（仅管理员可见入口，接口侧仍有权限校验） */
+function openAdminReview() {
+  settingsVisible.value = false
+  router.push('/admin/review')
 }
 
 const drawerRef = ref<InstanceType<typeof SongListDrawer>>()
@@ -592,7 +629,7 @@ function onFavorite(id?: string | number) {
 }
 
 onMounted(async () => {
-  // 从登录页返回时：切回「我的」页，资料与列表按新账号重新拉取
+  // 从登录 / 注册审批 / 关于等页面返回时：切回「我的」页，资料与列表按新账号重新拉取
   if (sessionStorage.getItem(LOGIN_RETURN_OWNER_KEY)) {
     sessionStorage.removeItem(LOGIN_RETURN_OWNER_KEY)
     navigate('owner')

@@ -25,3 +25,8 @@ export async function getWishMessages(wishId: number): Promise<WishMessage[]> {
 export async function addWishMessage(wishId: number, content: string): Promise<WishMessage> {
   return request.post<WishMessage>('/api/wish/message/add', { wishId, content })
 }
+
+/** 管理员删除心愿：连同点赞与留言一并删除 */
+export async function deleteWish(id: number): Promise<void> {
+  await request.post('/api/wish/delete', { id })
+}

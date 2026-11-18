@@ -93,6 +93,24 @@
                 {{ song.singer }}<template v-if="song.album"> · {{ song.album }}</template>
               </p>
             </div>
+            <div class="move-col">
+              <button
+                type="button"
+                class="move-btn"
+                :disabled="index === 0"
+                @click.stop="move(index, index - 1)"
+              >
+                <van-icon name="arrow-up" />
+              </button>
+              <button
+                type="button"
+                class="move-btn"
+                :disabled="index === player.playList.length - 1"
+                @click.stop="move(index, index + 1)"
+              >
+                <van-icon name="arrow-down" />
+              </button>
+            </div>
             <div class="song-tail">
               <WaveBox
                 v-if="song.id === player.currentSong?.id"
@@ -143,6 +161,13 @@ const visible = defineModel<boolean>('visible', { required: true })
 
 const player = usePlayerStore()
 const { playSong } = usePlaybackControl()
+
+/** 调整播放队列顺序，仅影响当前播放队列 */
+function move(from: number, to: number) {
+  if (to < 0 || to >= player.playList.length)
+    return
+  player.moveSong(from, to)
+}
 
 // ========== 顶部横杠：下拉拖动关闭 / 点击关闭 ==========
 const dragY = ref(0)
@@ -355,6 +380,41 @@ function onTopbarClick() {
     opacity: 1;
     font-weight: 500;
     color: #35c46a;
+  }
+
+  .move-col {
+    display: flex;
+    flex-shrink: 0;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .move-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 22px;
+    padding: 0;
+    border: none;
+    border-radius: 7px;
+    font-size: 12px;
+    line-height: 1;
+    color: inherit;
+    background: rgba(128, 128, 128, 0.18);
+    opacity: 0.75;
+    cursor: pointer;
+    transition: opacity 0.15s, transform 0.15s;
+
+    &:active {
+      transform: scale(0.92);
+      background: rgba(128, 128, 128, 0.28);
+    }
+
+    &:disabled {
+      opacity: 0.15;
+      pointer-events: none;
+    }
   }
 
   .song-tail {

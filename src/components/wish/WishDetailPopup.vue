@@ -41,7 +41,10 @@
             </p>
             <div class="detail-meta">
               <img class="avatar" :src="wishAvatarUrl(wish.userId, wish.avatar)" alt="">
-              <span class="user">{{ wishUserName(wish.userId, wish.nickname) }}</span>
+              <span class="user">
+                {{ wishUserName(wish.userId, wish.nickname) }}
+                <VipBadge :level="wish.vipLevel" small />
+              </span>
               <span class="time">{{ formatWishTime(wish.createTime) }}</span>
             </div>
           </article>
@@ -49,6 +52,17 @@
           <button class="like-btn" :class="{ liked }" @click="handleLike">
             <van-icon :name="liked ? 'liked' : 'like-o'" />
             <span>{{ liked ? '已点亮' : '点亮心愿' }} · {{ likeCount }}</span>
+          </button>
+
+          <button
+            v-if="profileStore.isAdmin"
+            type="button"
+            class="delete-wish"
+            :disabled="deleting"
+            @click="handleDeleteWish"
+          >
+            <van-icon name="delete-o" />
+            {{ deleting ? '删除中…' : '删除心愿' }}
           </button>
 
           <div class="message-head">
@@ -69,6 +83,7 @@
                 <div class="message-top">
                   <span class="user">
                     {{ wishUserName(message.userId, message.nickname) }}
+                    <VipBadge :level="message.vipLevel" small />
                     <i v-if="message.mine" class="mine">我的</i>
                   </span>
                   <span class="time">{{ formatWishTime(message.createTime) }}</span>
@@ -133,8 +148,11 @@
 
 <script setup lang="ts">
 import type { Wish, WishMessage } from '@/types/wish'
-import { addWishMessage, getWishMessages, toggleWishLike } from '@/api/wish'
+import { addWishMessage, deleteWish, getWishMessages, toggleWishLike } from '@/api/wish'
+import { useUserProfileStore } from '@/stores/userProfile'
 import { formatWishTime, wishAvatarUrl, wishUserName } from '@/utils/wish'
+import VipBadge from '@/components/common/VipBadge.vue'
+import { showToast } from 'vant'
 import { computed, nextTick, ref, watch } from 'vue'
 
 const props = defineProps<{
@@ -145,8 +163,12 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:visible': [value: boolean]
   'change': [payload: { id: number, liked?: boolean, likeCount?: number, messageCount?: number }]
+  'deleted': [id: number]
   'closed': []
 }>()
+
+const profileStore = useUserProfileStore()
+const deleting = ref(false)
 
 const bodyRef = ref<HTMLElement | null>(null)
 const messages = ref<WishMessage[]>([])
@@ -299,6 +321,24 @@ async function handleLike() {
     emit('change', { id: props.wish.id, liked: prevLiked, likeCount: prevCount })
   } finally {
     liking.value = false
+  }
+}
+
+/** 管理员删除当前心愿 */
+async function handleDeleteWish() {
+  const target = props.wish
+  if (!target || deleting.value)
+    return
+  deleting.value = true
+  try {
+    await deleteWish(target.id)
+    showToast('心愿已删除')
+    emit('deleted', target.id)
+    emit('update:visible', false)
+  } catch {
+    // 错误提示由拦截器处理
+  } finally {
+    deleting.value = false
   }
 }
 
@@ -479,6 +519,26 @@ async function sendMessage() {
 
 .like-btn:active {
   transform: scale(0.98);
+}
+
+.delete-wish {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  margin-top: 10px;
+  padding: 8px 0;
+  border: 1px solid rgba(248, 113, 113, 0.32);
+  border-radius: 999px;
+  font-size: 12px;
+  color: #fca5a5;
+  background: rgba(248, 113, 113, 0.1);
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.5;
+  }
 }
 
 .like-btn.liked {

@@ -46,6 +46,7 @@
           <div class="comment-main">
             <p class="author">
               {{ displayName(item) }}
+              <VipBadge :level="item.vipLevel" small />
             </p>
             <p class="content">
               {{ item.content }}
@@ -55,7 +56,7 @@
               <button type="button" class="meta-btn" @click="startReply(item)">
                 回复
               </button>
-              <button v-if="item.mine" type="button" class="meta-btn" @click="onDelete(item)">
+              <button v-if="item.mine || profileStore.isAdmin" type="button" class="meta-btn" @click="onDelete(item)">
                 删除
               </button>
             </div>
@@ -66,6 +67,7 @@
                 <div class="comment-main">
                   <p class="author">
                     {{ displayName(reply) }}
+                    <VipBadge :level="reply.vipLevel" small />
                   </p>
                   <p class="content">
                     {{ reply.content }}
@@ -75,7 +77,7 @@
                     <button type="button" class="meta-btn" @click="startReply(reply)">
                       回复
                     </button>
-                    <button v-if="reply.mine" type="button" class="meta-btn" @click="onDelete(reply)">
+                    <button v-if="reply.mine || profileStore.isAdmin" type="button" class="meta-btn" @click="onDelete(reply)">
                       删除
                     </button>
                   </div>
@@ -173,7 +175,9 @@
 import type { Song, SongComment } from '@/types/music'
 import { addSongComment, deleteSongComment, getSongCommentCount, getSongComments, toggleCommentLike } from '@/api/music'
 import { toUserToken } from '@/composables/player/usePlaylistDiscovery'
+import { useUserProfileStore } from '@/stores/userProfile'
 import { resolveAvatar } from '@/utils/avatar'
+import VipBadge from '@/components/common/VipBadge.vue'
 import { showToast } from 'vant'
 import { computed, nextTick, ref, watch } from 'vue'
 
@@ -191,6 +195,9 @@ const emit = defineEmits<{
 }>()
 
 const visible = defineModel<boolean>('visible', { required: true })
+
+/** 管理员可删除任意评论 */
+const profileStore = useUserProfileStore()
 
 const PAGE_SIZE = 20
 

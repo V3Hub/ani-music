@@ -72,6 +72,7 @@
               </p>
               <span class="wish-user">
                 {{ wishUserName(wish.userId, wish.nickname) }}
+                <VipBadge :level="wish.vipLevel" small />
                 <i v-if="wish.mine" class="mine-inline">我的</i>
               </span>
             </div>
@@ -116,7 +117,10 @@
               </p>
               <div class="wish-meta">
                 <img class="avatar" :src="wishAvatarUrl(currentWish.userId, currentWish.avatar)" alt="">
-                <span class="wish-user">{{ wishUserName(currentWish.userId, currentWish.nickname) }}</span>
+                <span class="wish-user">
+                  {{ wishUserName(currentWish.userId, currentWish.nickname) }}
+                  <VipBadge :level="currentWish.vipLevel" small />
+                </span>
                 <span class="wish-time">{{ formatWishTime(currentWish.createTime) }}</span>
                 <div class="wish-actions">
                   <button
@@ -151,6 +155,7 @@
       v-model:visible="detailVisible"
       :wish="activeWish"
       @change="handleDetailChange"
+      @deleted="handleWishDeleted"
       @closed="resumeRotate"
     />
   </div>
@@ -160,6 +165,7 @@
 import type { Wish } from '@/types/wish'
 import { addWish, getWishes, toggleWishLike } from '@/api/wish'
 import { formatWishTime, wishAvatarUrl, wishUserName } from '@/utils/wish'
+import VipBadge from '@/components/common/VipBadge.vue'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import WishDetailPopup from './WishDetailPopup.vue'
 
@@ -304,6 +310,12 @@ function openDetail(wish: Wish) {
   pauseRotate()
   activeWish.value = wish
   detailVisible.value = true
+}
+
+/** 管理员删除心愿后从列表移除 */
+function handleWishDeleted(id: number) {
+  wishes.value = wishes.value.filter(item => item.id !== id)
+  activeWish.value = null
 }
 
 function handleDetailChange(payload: {

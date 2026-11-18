@@ -51,6 +51,8 @@ export interface PlaylistItem {
   nickname?: string
   /** 歌单作者头像（base64 / data URL） */
   avatar?: string
+  /** 歌单作者 VIP 等级 */
+  vip_level?: number
   /** 运行时附加：来源 */
   source?: string | number
   /** 运行时附加：所属用户标识 */
@@ -67,6 +69,8 @@ export interface SongComment {
   nickname?: string
   /** 评论者头像（base64 / data URL） */
   avatar?: string
+  /** 评论者 VIP 等级：0 非会员，1-9 永久 VIP */
+  vipLevel?: number
   content: string
   /** 顶层评论为 0，回复为所属顶层评论 id */
   parentId: number

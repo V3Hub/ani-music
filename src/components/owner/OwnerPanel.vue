@@ -5,7 +5,7 @@
       <van-icon class="settings-btn" name="setting-o" size="22" @click="emit('openSettings')" />
     </div>
     <div class="owner-content">
-      <div class="user-info" @click="emit('openLogin')">
+      <div class="user-info" @click="handleUserClick">
         <van-image
           round
           width="48"
@@ -13,7 +13,10 @@
           :src="avatarSrc"
         />
         <div class="user-meta">
-          <div class="user-name">{{ displayName }}</div>
+          <div class="user-name">
+            <span>{{ displayName }}</span>
+            <VipBadge :level="profileStore.vipLevel" />
+          </div>
           <div class="user-hint">{{ hintText }}</div>
         </div>
         <van-icon class="login-arrow" name="arrow" />
@@ -89,11 +92,17 @@
 <script setup lang="ts">
 import type { PlaylistItem, Song } from '@/types/music'
 import WaveBox from '@/components/waveBox/WaveBox.vue'
+import VipBadge from '@/components/common/VipBadge.vue'
+import { useUserProfileStore } from '@/stores/userProfile'
 import { resolveAvatar } from '@/utils/avatar'
 import { computed } from 'vue'
 
+const profileStore = useUserProfileStore()
+
 const props = defineProps<{
   userToken: string
+  /** 是否已登录：决定点击用户信息跳登录页还是账号详情页 */
+  loggedIn: boolean
   /** 登录账号的昵称，未登录为空 */
   nickname: string
   /** 登录账号的头像（数据库 base64 / data URL），未登录为空 */
@@ -115,6 +124,7 @@ const emit = defineEmits<{
   (e: 'createPlaylist'): void
   (e: 'openSettings'): void
   (e: 'openLogin'): void
+  (e: 'openAccount'): void
 }>()
 
 /** 没有上传头像时回退到按 userToken 生成的默认头像 */
@@ -123,7 +133,15 @@ const avatarSrc = computed(() => resolveAvatar(
   `https://api.dicebear.com/7.x/avataaars/svg?seed=${props.userToken || 'guest'}`,
 ))
 const displayName = computed(() => props.nickname || props.userToken || '游客')
-const hintText = computed(() => (props.nickname ? '点击可切换账号' : '点击登录 / 切换账号'))
+const hintText = computed(() => (props.loggedIn ? '查看账号详情' : '点击登录 / 注册'))
+
+/** 未登录去登录页，已登录进入账号详情页 */
+function handleUserClick() {
+  if (props.loggedIn)
+    emit('openAccount')
+  else
+    emit('openLogin')
+}
 
 /** 项目 logo，歌单没有封面时兜底 */
 const LOGO_URL = '/qs.svg'
@@ -192,6 +210,9 @@ function coverOf(pic?: string) {
       min-width: 0;
 
       .user-name {
+        display: flex;
+        align-items: center;
+        gap: 8px;
         overflow: hidden;
         font-size: 16px;
         font-weight: 500;

@@ -165,13 +165,65 @@ async function trimOldestIfFull(DB, table, userId, total) {
   await DB.prepare(`DELETE FROM ${table} WHERE user_id = ? ORDER BY sort ASC LIMIT 1`).bind(userId).run()
 }
 
+/**
+ * 删除用户及其全部关联记录
+ * 评论、心愿等表的 user_id 以文本存储，比较时同时匹配数字与字符串
+ * @param {object} DB D1 数据库实例
+ * @param {number} userId 用户 id
+ */
+async function deleteUserCascade(DB, userId) {
+  const id = Number(userId) || 0
+  const text = String(userId)
+  await DB.batch([
+    // 播放记录、收藏、分享
+    DB.prepare('DELETE FROM user_play_record WHERE user_id = ?').bind(id),
+    DB.prepare('DELETE FROM user_favorite WHERE user_id = ?').bind(id),
+    DB.prepare('DELETE FROM share_user WHERE user_id = ?').bind(id),
+    // 歌单：先删歌单内歌曲与订阅，再删歌单
+    DB.prepare('DELETE FROM playlist_song WHERE playlist_id IN (SELECT id FROM user_playlist WHERE user_id = ?)').bind(id),
+    DB.prepare('DELETE FROM user_playlist_sub WHERE playlist_id IN (SELECT id FROM user_playlist WHERE user_id = ?)').bind(id),
+    DB.prepare('DELETE FROM user_playlist_sub WHERE user_id = ?').bind(id),
+    DB.prepare('DELETE FROM user_playlist WHERE user_id = ?').bind(id),
+    // 评论：先清点赞与下属回复，再删自己的评论
+    DB.prepare(
+      `DELETE FROM song_comment_like
+       WHERE user_id IN (?, ?)
+          OR comment_id IN (SELECT id FROM song_comment WHERE user_id IN (?, ?))`,
+    ).bind(id, text, id, text),
+    DB.prepare('DELETE FROM song_comment WHERE parent_id IN (SELECT id FROM song_comment WHERE user_id IN (?, ?))').bind(id, text),
+    DB.prepare('DELETE FROM song_comment WHERE user_id IN (?, ?)').bind(id, text),
+    // 心愿：先清心愿的点赞与留言，再删心愿本身
+    DB.prepare(
+      `DELETE FROM wish_like
+       WHERE user_id IN (?, ?)
+          OR wish_id IN (SELECT id FROM wish WHERE user_id IN (?, ?))`,
+    ).bind(id, text, id, text),
+    DB.prepare(
+      `DELETE FROM wish_message
+       WHERE user_id IN (?, ?)
+          OR wish_id IN (SELECT id FROM wish WHERE user_id IN (?, ?))`,
+    ).bind(id, text, id, text),
+    DB.prepare('DELETE FROM wish WHERE user_id IN (?, ?)').bind(id, text),
+    // VIP 记录、注册申请
+    DB.prepare('DELETE FROM vip_record WHERE user_id = ?').bind(id),
+    DB.prepare('DELETE FROM registration_request WHERE user_id = ?').bind(id),
+    // 最后删除用户本体
+    DB.prepare('DELETE FROM users WHERE id = ?').bind(id),
+  ])
+}
+
 /** 路由表：path → method → 处理函数，统一由 fetch 分发 */
 const ROUTES = {
   '/api/user/auto': { POST: handleAutoLogin },
   '/api/user/login': { POST: handleUserLogin },
-  '/api/user/profile': { GET: handleGetUserProfile },
+  '/api/user/profile': { GET: handleGetUserProfile, POST: handleUpdateUserProfile },
+  '/api/user/register': { POST: handleRegister },
+  '/api/user/register/status': { GET: handleRegisterStatus },
+  '/api/admin/registrations': { GET: handleAdminListRegistrations },
+  '/api/admin/registration/review': { POST: handleAdminReviewRegistration },
+  '/api/admin/user/vip-level': { POST: handleAdminSetVipLevel },
+  '/api/admin/user/vip-records': { GET: handleAdminVipRecords },
   '/api/song/add': { POST: handleUpsertSong },
-  '/api/play/report': { POST: handleReportPlay },
   '/api/recommend/hot': { GET: handleGetHotList },
   '/api/playRecord/list': { GET: handleGetRecentPlay },
   '/api/playRecord/add': { POST: handleAddRecentPlay },
@@ -189,6 +241,7 @@ const ROUTES = {
   '/api/playlist/detail': { GET: handleGetPlaylistDetail },
   '/api/playlist/add-song': { POST: handleAddPlaylistSong },
   '/api/playlist/sort-song': { POST: handleSortPlaylistSongs },
+  '/api/playlist/demote-song': { POST: handleDemotePlaylistSong },
   '/api/playlist/remove-song': { POST: handleRemovePlaylistSong },
   '/api/playlist/discover': { GET: handleGetDiscoverPlaylists },
   '/api/playlist/search': { GET: handleSearchPlaylists },
@@ -206,6 +259,7 @@ const ROUTES = {
   '/api/wish/like': { POST: handleToggleWishLike },
   '/api/wish/messages': { GET: handleGetWishMessages },
   '/api/wish/message/add': { POST: handleAddWishMessage },
+  '/api/wish/delete': { POST: handleDeleteWish },
   '/api/playlist/share': { GET: handleGetPlaylistShareCount, POST: handleReportPlaylistShare },
   '/api/song/theme-color': { GET: handleGetSongThemeColor },
   '/api/song/meta': { POST: handleUpdateSongMeta },
@@ -215,6 +269,8 @@ const ROUTES = {
 const PUBLIC_PATHS = new Set([
   '/api/user/auto',
   '/api/user/login',
+  '/api/user/register',
+  '/api/user/register/status',
   '/api/song/stream',
 ])
 
@@ -291,56 +347,44 @@ export default {
       return jsonResp({ code: 500, msg: '服务器内部错误' }, 500)
     }
   },
-  /** 定时任务：重算歌曲热度榜、清理 30 天未活跃用户与 90 天前播放记录 */
+  /** 定时任务：清理 30 天内无任何活动的非 VIP 用户（热度在推荐接口实时统计） */
   async scheduled(event, env, _ctx) {
     const DB = env.DB
     try {
-      await DB.prepare(`DELETE FROM hot_song_stat;`).run()
-      await DB.prepare(
+      // 清理 30 天内没有任何活动的非 VIP 用户（VIP 与有歌单/收藏等记录的用户保留）
+      const { results } = await DB.prepare(
         `
-      INSERT INTO hot_song_stat (song_id, week_plays, day_plays)
-      SELECT
-        song_id,
-        COUNT(*) AS week_plays,
-        0 AS day_plays
-      FROM play_records
-      WHERE play_time >= DATETIME(DATE('now', '-6 day'))
-      GROUP BY song_id;
+      SELECT u.id FROM users u
+      WHERE COALESCE(u.vip_level, 0) = 0
+        AND NOT EXISTS (
+          SELECT 1 FROM user_play_record p
+          WHERE p.user_id = u.id
+            AND p.create_time >= DATETIME(DATE('now', '-30 day'))
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM song_comment c
+          WHERE c.user_id IN (u.id, CAST(u.id AS TEXT))
+            AND c.create_time >= DATETIME(DATE('now', '-30 day'))
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM wish w
+          WHERE w.user_id IN (u.id, CAST(u.id AS TEXT))
+            AND w.create_time >= DATETIME(DATE('now', '-30 day'))
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM wish_message m
+          WHERE m.user_id IN (u.id, CAST(u.id AS TEXT))
+            AND m.create_time >= DATETIME(DATE('now', '-30 day'))
+        )
+        AND NOT EXISTS (SELECT 1 FROM user_favorite f WHERE f.user_id = u.id)
+        AND NOT EXISTS (SELECT 1 FROM user_playlist pl WHERE pl.user_id = u.id)
+        AND NOT EXISTS (SELECT 1 FROM user_playlist_sub s WHERE s.user_id = u.id)
+      LIMIT 200
     `,
-      ).run()
-
-      await DB.prepare(
-        `
-      UPDATE hot_song_stat
-      SET day_plays = COALESCE((
-        SELECT COUNT(*)
-        FROM play_records pr
-        WHERE pr.song_id = hot_song_stat.song_id
-          AND play_time >= DATETIME(DATE('now', '-1 day'))
-          AND play_time < DATETIME(DATE('now'))
-      ), 0);
-    `,
-      ).run()
-
-      // 清理 30 天未活跃的游客账号；有用户名的正式账号保留
-      await DB.prepare(
-        `
-      DELETE FROM users
-      WHERE (username IS NULL OR username = '')
-        AND id NOT IN (
-        SELECT DISTINCT user_id
-        FROM play_records
-        WHERE play_time >= DATETIME(DATE('now', '-30 day'))
-      );
-    `,
-      ).run()
-
-      await DB.prepare(
-        `
-        DELETE FROM play_records
-        WHERE play_time < DATETIME(DATE('now', '-90 day'));
-      `,
-      ).run()
+      ).all()
+      // 逐个删除用户及其关联记录，避免留下孤儿数据
+      for (const user of results || [])
+        await deleteUserCascade(DB, user.id)
     } catch (err) {
       console.error('【定时任务异常】', err.message, err.stack)
     }
@@ -408,6 +452,9 @@ function mapUserProfile(row) {
     username: row.username || '',
     nickname: row.nickname || '',
     avatar: row.avatar_url || '',
+    isAdmin: !!row.is_admin,
+    /** VIP 等级：0 非会员，1+ 永久 VIP 等级 */
+    vipLevel: Number(row.vip_level) || 0,
   }
 }
 
@@ -428,28 +475,53 @@ async function touchLastLogin(env, userId) {
 }
 
 /**
- * 用户名密码登录 POST /api/user/login
- * 密码以 SHA-256(密码 + PASSWORD_SALT) 存储，与前端「密码生成工具」输出一致
+ * 账号密码登录 POST /api/user/login
+ * account 支持用户名 / 手机号 / 邮箱任一匹配；密码以 SHA-256(密码 + PASSWORD_SALT) 存储
+ * 同一字符串命中多个账号且密码都正确时返回候选列表，由前端选择后再带 userId 登录
  */
 async function handleUserLogin(request, env) {
   const body = await request.json().catch(() => ({}))
-  const username = String(body.username || '').trim()
+  const account = String(body.account || body.username || '').trim()
   const password = String(body.password || '')
-  if (!username || !password) {
-    return jsonResp({ code: 400, msg: '请输入用户名和密码' })
+  if (!account || !password) {
+    return jsonResp({ code: 400, msg: '请输入账号和密码' })
   }
-  const row = await env.DB.prepare(
-    `SELECT id, username, password, nickname, avatar_url FROM users WHERE username = ?`,
+  const { results } = await env.DB.prepare(
+    `SELECT id, username, password, nickname, avatar_url, is_admin, vip_level FROM users
+     WHERE username = ? OR (phone IS NOT NULL AND phone != '' AND phone = ?)
+        OR (email IS NOT NULL AND email != '' AND email = ?)
+     ORDER BY id ASC`,
   )
-    .bind(username)
-    .first()
-  if (!row?.id || !row.password) {
-    return jsonResp({ code: 400, msg: '用户名或密码错误' })
-  }
+    .bind(account, account, account)
+    .all()
   const hashed = await sha256Hex(password + PASSWORD_SALT)
-  if (hashed !== row.password) {
-    return jsonResp({ code: 400, msg: '用户名或密码错误' })
+  // 密码校验通过的账号才可能是候选，避免泄露其他人的用户名
+  let matched = (results || []).filter(row => row?.id && row.password === hashed)
+  // 前端已选择具体账号时只保留该账号
+  const pickedId = Number(body.userId) || 0
+  if (pickedId)
+    matched = matched.filter(row => row.id === pickedId)
+
+  if (!matched.length) {
+    return jsonResp({ code: 400, msg: '账号或密码错误' })
   }
+  if (matched.length > 1) {
+    return jsonResp({
+      code: 200,
+      msg: '请选择要登录的账号',
+      data: {
+        needChoose: true,
+        accounts: matched.map(row => ({
+          id: row.id,
+          username: row.username || '',
+          nickname: row.nickname || '',
+          avatar: row.avatar_url || '',
+          vipLevel: Number(row.vip_level) || 0,
+        })),
+      },
+    })
+  }
+  const row = matched[0]
   await touchLastLogin(env, row.id)
   return jsonResp({
     code: 200,
@@ -462,7 +534,7 @@ async function handleUserLogin(request, env) {
 async function handleGetUserProfile(request, env) {
   const userId = getRequestUserId(request)
   const row = await env.DB.prepare(
-    `SELECT id, username, nickname, avatar_url FROM users WHERE id = ?`,
+    `SELECT id, username, nickname, avatar_url, is_admin, vip_level FROM users WHERE id = ?`,
   )
     .bind(userId)
     .first()
@@ -470,6 +542,308 @@ async function handleGetUserProfile(request, env) {
     return jsonResp({ code: 401, msg: '账号不存在' }, 401)
   }
   return jsonResp({ code: 200, msg: '请求成功', data: mapUserProfile(row) })
+}
+
+/**
+ * 修改当前用户资料 POST /api/user/profile
+ * body: { username?, nickname?, avatar? }，未传的字段保持原值
+ */
+async function handleUpdateUserProfile(request, env) {
+  const userId = getRequestUserId(request)
+  const body = await request.json().catch(() => ({}))
+  const row = await env.DB.prepare(
+    `SELECT id, username, nickname, avatar_url, is_admin, vip_level FROM users WHERE id = ?`,
+  )
+    .bind(userId)
+    .first()
+  if (!row?.id) {
+    return jsonResp({ code: 401, msg: '账号不存在' }, 401)
+  }
+
+  const username = body.username === undefined ? (row.username || '') : String(body.username).trim()
+  const nickname = body.nickname === undefined ? (row.nickname || '') : String(body.nickname).trim()
+  const avatar = body.avatar === undefined ? (row.avatar_url || '') : String(body.avatar)
+
+  if (!username)
+    return jsonResp({ code: 400, msg: '用户名不能为空' })
+  if (username.length < 2 || username.length > 20)
+    return jsonResp({ code: 400, msg: '用户名需 2-20 个字符' })
+  if (!nickname)
+    return jsonResp({ code: 400, msg: '昵称不能为空' })
+  if (nickname.length > 20)
+    return jsonResp({ code: 400, msg: '昵称最多 20 个字符' })
+  if (avatar && avatar.length > 300 * 1024)
+    return jsonResp({ code: 400, msg: '头像图片过大，请重新选择' })
+
+  if (username !== row.username) {
+    const dup = await env.DB.prepare(
+      'SELECT id FROM users WHERE username = ? AND id != ? LIMIT 1',
+    ).bind(username, userId).first()
+    if (dup)
+      return jsonResp({ code: 400, msg: '该用户名已被占用' })
+  }
+
+  await env.DB.prepare(
+    'UPDATE users SET username = ?, nickname = ?, avatar_url = ? WHERE id = ?',
+  ).bind(username, nickname, avatar, userId).run()
+
+  return jsonResp({
+    code: 200,
+    msg: '已保存',
+    data: mapUserProfile({ ...row, username, nickname, avatar_url: avatar }),
+  })
+}
+
+/**
+ * 会员注册申请 POST /api/user/register
+ * 必填：用户名、昵称、密码、付款截图；选填：手机号、邮箱
+ * 提交后进入 registration_request 待审批，管理员通过后才写入 users 生效
+ */
+async function handleRegister(request, env) {
+  const body = await request.json().catch(() => ({}))
+  const username = String(body.username || '').trim()
+  const nickname = String(body.nickname || '').trim()
+  const password = String(body.password || '')
+  const phone = String(body.phone || '').trim()
+  const email = String(body.email || '').trim()
+  const screenshot = String(body.paymentScreenshot || '')
+
+  if (!username || !nickname || !password) {
+    return jsonResp({ code: 400, msg: '用户名、昵称、密码为必填项' })
+  }
+  if (!/^\w{3,20}$/.test(username)) {
+    return jsonResp({ code: 400, msg: '用户名需为 3-20 位字母、数字或下划线' })
+  }
+  if (nickname.length > 20) {
+    return jsonResp({ code: 400, msg: '昵称最长 20 个字符' })
+  }
+  if (password.length < 6) {
+    return jsonResp({ code: 400, msg: '密码至少 6 位' })
+  }
+  if (phone && !/^1\d{10}$/.test(phone)) {
+    return jsonResp({ code: 400, msg: '手机号格式不正确' })
+  }
+  if (email && !/^[^\s@]+@[^\s@][^\s.@]*\.[^\s@]+$/.test(email)) {
+    return jsonResp({ code: 400, msg: '邮箱格式不正确' })
+  }
+  if (!screenshot) {
+    return jsonResp({ code: 400, msg: '请上传付款截图' })
+  }
+  // base64 截图限制约 600KB，避免 D1 单行过大
+  if (screenshot.length > 600 * 1024) {
+    return jsonResp({ code: 400, msg: '截图过大，请压缩后再上传' })
+  }
+
+  const DB = env.DB
+  // user_id 必填：注册必须绑定当前 userToken
+  const submitterId = await getUserIdFromToken(request)
+  if (!submitterId)
+    return jsonResp({ code: 401, msg: '登录状态已失效，请刷新页面后重试' })
+  // 同一 userToken 已有审批中 / 已通过的申请时，不允许再次提交（被拒绝的可以重新申请）
+  const mine = await DB.prepare(
+    `SELECT status FROM registration_request
+     WHERE user_id = ? AND status IN ('pending', 'approved') ORDER BY id DESC LIMIT 1`,
+  ).bind(submitterId).first()
+  if (mine) {
+    return jsonResp({
+      code: 400,
+      msg: mine.status === 'approved' ? '当前账号已完成注册，不能重复申请' : '当前账号已有待审批申请，请耐心等待',
+    })
+  }
+  // 用户名需全局唯一；手机号、邮箱允许重复，登录时再用密码区分
+  const dupUser = await DB.prepare(
+    'SELECT id FROM users WHERE username = ? LIMIT 1',
+  ).bind(username).first()
+  if (dupUser)
+    return jsonResp({ code: 400, msg: '该用户名已被注册' })
+  // 与待审批申请查重（被拒绝的允许重新提交）
+  const dupPending = await DB.prepare(
+    `SELECT id FROM registration_request WHERE status = 'pending' AND username = ? LIMIT 1`,
+  ).bind(username).first()
+  if (dupPending)
+    return jsonResp({ code: 400, msg: '该用户名已有待审批申请，请耐心等待' })
+
+  const hashed = await sha256Hex(password + PASSWORD_SALT)
+  await DB.prepare(
+    `INSERT INTO registration_request
+       (user_id, username, nickname, password, phone, email, payment_screenshot, status, create_time)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', DATETIME('now'))`,
+  ).bind(submitterId, username, nickname, hashed, phone, email, screenshot).run()
+  return jsonResp({ code: 200, msg: '注册申请已提交，请等待管理员审批' })
+}
+
+/**
+ * 注册审批进度查询 GET /api/user/register/status
+ * 不传 username 时按当前 userToken 查询（默认方式）；显式传 username 时按用户名查询
+ * 返回最近一条申请的状态（不含截图、密码等敏感信息）
+ */
+async function handleRegisterStatus(request, env) {
+  const url = new URL(request.url)
+  const username = String(url.searchParams.get('username') || '').trim()
+  const FIELDS = 'username, nickname, status, reject_reason, create_time, review_time'
+
+  if (username) {
+    const row = await env.DB.prepare(
+      `SELECT ${FIELDS} FROM registration_request WHERE username = ? ORDER BY id DESC LIMIT 1`,
+    ).bind(username).first()
+    if (!row) {
+      return jsonResp({ code: 404, msg: '未找到该用户名的注册申请' })
+    }
+    return jsonResp({ code: 200, data: row })
+  }
+
+  const userId = await getUserIdFromToken(request)
+  if (!userId) {
+    return jsonResp({ code: 400, msg: '请输入用户名' })
+  }
+  const row = await env.DB.prepare(
+    `SELECT ${FIELDS} FROM registration_request WHERE user_id = ? ORDER BY id DESC LIMIT 1`,
+  ).bind(userId).first()
+  // 当前账号没有申请时返回 null，前端静默展示「暂无申请」
+  return jsonResp({ code: 200, data: row || null })
+}
+
+/** 校验当前请求是否来自管理员，是则返回管理员 id */
+async function requireAdmin(request, env) {
+  const userId = await getUserIdFromToken(request)
+  if (!userId)
+    return null
+  const row = await env.DB.prepare('SELECT id, is_admin FROM users WHERE id = ?').bind(userId).first()
+  if (!row?.id || !row.is_admin)
+    return null
+  return row.id
+}
+
+/** 管理员：注册申请列表 GET /api/admin/registrations?status=pending|approved|rejected|all */
+async function handleAdminListRegistrations(request, env) {
+  const adminId = await requireAdmin(request, env)
+  if (!adminId)
+    return jsonResp({ code: 403, msg: '无管理员权限' }, 403)
+  const url = new URL(request.url)
+  const status = String(url.searchParams.get('status') || 'pending')
+  const where = status === 'all' ? '' : `WHERE status = '${status.replace(/[^a-z]/g, '')}'`
+  const { results } = await env.DB.prepare(
+    `SELECT id, user_id, username, nickname, phone, email, payment_screenshot, status,
+            reject_reason, create_time, review_time
+     FROM registration_request ${where} ORDER BY id DESC LIMIT 100`,
+  ).all()
+  return jsonResp({ code: 200, data: results || [] })
+}
+
+/**
+ * 管理员：审批 POST /api/admin/registration/review
+ * body: { id, action: 'approve' | 'reject', rejectReason? }
+ * 通过时直接更新提交者的 users 记录（vip_level = 1），账号即刻生效
+ */
+async function handleAdminReviewRegistration(request, env) {
+  const adminId = await requireAdmin(request, env)
+  if (!adminId)
+    return jsonResp({ code: 403, msg: '无管理员权限' }, 403)
+  const body = await request.json().catch(() => ({}))
+  const id = Number(body.id)
+  const action = String(body.action || '')
+  const rejectReason = String(body.rejectReason || '').trim()
+  if (!id || !['approve', 'reject'].includes(action)) {
+    return jsonResp({ code: 400, msg: '参数不完整' })
+  }
+  const DB = env.DB
+  const req = await DB.prepare(`SELECT * FROM registration_request WHERE id = ?`).bind(id).first()
+  if (!req?.id)
+    return jsonResp({ code: 404, msg: '申请不存在' })
+  if (req.status !== 'pending')
+    return jsonResp({ code: 400, msg: '该申请已处理，请刷新列表' })
+
+  if (action === 'reject') {
+    await DB.prepare(
+      `UPDATE registration_request
+       SET status = 'rejected', reject_reason = ?, review_time = DATETIME('now'), reviewer_id = ?
+       WHERE id = ?`,
+    ).bind(rejectReason || '未通过审核', adminId, id).run()
+    return jsonResp({ code: 200, msg: '已拒绝该申请' })
+  }
+
+  // 通过：直接更新提交申请的那个用户（同 userToken 无需重新登录）
+  // user_id 为必填，申请未绑定用户时不允许通过
+  const targetUserId = Number(req.user_id) || 0
+  if (!targetUserId)
+    return jsonResp({ code: 400, msg: '该申请未绑定用户，无法通过' })
+
+  // 用户名需排除自身；手机号、邮箱允许重复
+  const dup = await DB.prepare(
+    'SELECT id FROM users WHERE id != ? AND username = ? LIMIT 1',
+  ).bind(targetUserId, req.username).first()
+  if (dup)
+    return jsonResp({ code: 400, msg: '用户名已被占用，请拒绝该申请' })
+
+  const exist = await DB.prepare('SELECT id, vip_level FROM users WHERE id = ?').bind(targetUserId).first()
+  if (!exist?.id)
+    return jsonResp({ code: 400, msg: '申请对应的用户不存在' })
+  const fromLevel = Number(exist.vip_level) || 0
+
+  // 注册成功即为永久 VIP（vip_level = 1）
+  await DB.prepare(
+    `UPDATE users
+     SET username = ?, nickname = ?, password = ?, phone = ?, email = ?, vip_level = 1
+     WHERE id = ?`,
+  ).bind(req.username, req.nickname, req.password, req.phone || null, req.email || null, targetUserId).run()
+  await DB.prepare(
+    `INSERT INTO vip_record (user_id, from_level, to_level, change_type, remark, operator_id, create_time)
+     VALUES (?, ?, 1, 'register', '注册审批通过，开通永久 VIP', ?, DATETIME('now'))`,
+  ).bind(targetUserId, fromLevel, adminId).run()
+  await DB.prepare(
+    `UPDATE registration_request
+     SET status = 'approved', review_time = DATETIME('now'), reviewer_id = ? WHERE id = ?`,
+  ).bind(adminId, id).run()
+  return jsonResp({ code: 200, msg: '已通过，账号已生效（永久 VIP）' })
+}
+
+/**
+ * 管理员：调整用户 VIP 等级 POST /api/admin/user/vip-level
+ * body: { username, level, remark? }，level 1-9；变更写入 vip_record
+ */
+async function handleAdminSetVipLevel(request, env) {
+  const adminId = await requireAdmin(request, env)
+  if (!adminId)
+    return jsonResp({ code: 403, msg: '无管理员权限' }, 403)
+  const body = await request.json().catch(() => ({}))
+  const username = String(body.username || '').trim()
+  const level = Number(body.level)
+  const remark = String(body.remark || '').trim()
+  if (!username || !Number.isInteger(level) || level < 1 || level > 9) {
+    return jsonResp({ code: 400, msg: '参数错误：level 需为 1-9 的整数' })
+  }
+  const DB = env.DB
+  const user = await DB.prepare('SELECT id, vip_level FROM users WHERE username = ?').bind(username).first()
+  if (!user?.id)
+    return jsonResp({ code: 404, msg: '用户不存在' })
+  const fromLevel = Number(user.vip_level) || 0
+  if (fromLevel === level)
+    return jsonResp({ code: 400, msg: '该用户已是此等级' })
+  await DB.prepare('UPDATE users SET vip_level = ? WHERE id = ?').bind(level, user.id).run()
+  await DB.prepare(
+    `INSERT INTO vip_record (user_id, from_level, to_level, change_type, remark, operator_id, create_time)
+     VALUES (?, ?, ?, 'admin', ?, ?, DATETIME('now'))`,
+  ).bind(user.id, fromLevel, level, remark || `管理员调整等级 VIP${fromLevel} → VIP${level}`, adminId).run()
+  return jsonResp({ code: 200, msg: `已调整为 VIP${level}`, data: { userId: user.id, vipLevel: level } })
+}
+
+/** 管理员：用户 VIP 变更记录 GET /api/admin/user/vip-records?username=xxx */
+async function handleAdminVipRecords(request, env) {
+  const adminId = await requireAdmin(request, env)
+  if (!adminId)
+    return jsonResp({ code: 403, msg: '无管理员权限' }, 403)
+  const url = new URL(request.url)
+  const username = String(url.searchParams.get('username') || '').trim()
+  if (!username)
+    return jsonResp({ code: 400, msg: '请输入用户名' })
+  const user = await env.DB.prepare('SELECT id FROM users WHERE username = ?').bind(username).first()
+  if (!user?.id)
+    return jsonResp({ code: 404, msg: '用户不存在' })
+  const { results } = await env.DB.prepare(
+    `SELECT id, from_level, to_level, change_type, remark, create_time
+     FROM vip_record WHERE user_id = ? ORDER BY id DESC LIMIT 50`,
+  ).bind(user.id).all()
+  return jsonResp({ code: 200, data: results || [] })
 }
 
 /**
@@ -579,55 +953,112 @@ async function handleUpsertSong(request, env) {
   }
   return jsonResp({ code: 200, msg: '请求成功', data: mapSongRow(inserted) })
 }
-/** 上报播放记录 POST /api/play/report，用于热度统计 */
-async function handleReportPlay(request, env) {
-  const userId = getRequestUserId(request)
-  const body = await request.json().catch(() => ({}))
-  const { id } = body
-  const DB = env.DB
-  await DB.prepare(
-    `
-    INSERT INTO play_records (user_id, song_id)
-    VALUES (?, ?)
-  `,
-  )
-    .bind(userId, id)
-    .run()
-
-  return jsonResp({ code: 200, msg: '请求成功' })
-}
-
-/** 热门推荐 GET /api/recommend/hot：日榜 + 周榜合并去重后返回 */
+/**
+ * 热门推荐 GET /api/recommend/hot
+ * 综合热度、偏好与新鲜度打分：
+ *  - 热度：日榜权重高于周榜，避免旧热歌长期占位
+ *  - 偏好：收藏过的歌手 > 常听歌手，收藏过的歌曲小幅加权
+ *  - 去重：听过的歌降权，同一歌手最多两首
+ *  - 兜底：热度为 0 的新歌按 id 新鲜度加分，保证冷启动也有内容
+ */
 async function handleGetHotList(request, env) {
   const DB = env.DB
+  const userId = getRequestUserId(request)
 
-  const dayTopRes = await DB.prepare(
+  // 候选池：全部歌曲带上近 7 天实时热度，最多取 300 首参与排序
+  const { results } = await DB.prepare(
     `
-    SELECT s.*, h.day_plays, h.week_plays
-    FROM hot_song_stat h
-    LEFT JOIN songs s ON s.id = h.song_id
-    ORDER BY h.day_plays DESC
-    LIMIT 20
+    SELECT s.*,
+           COALESCE(h.day_plays, 0) AS day_plays,
+           COALESCE(h.week_plays, 0) AS week_plays
+    FROM songs s
+    LEFT JOIN (
+      SELECT song_id,
+             COUNT(*) AS week_plays,
+             SUM(CASE
+               WHEN create_time >= DATETIME(DATE('now', '-1 day'))
+                AND create_time < DATETIME('now') THEN 1 ELSE 0
+             END) AS day_plays
+      FROM user_play_record
+      WHERE create_time >= DATETIME(DATE('now', '-6 day'))
+      GROUP BY song_id
+    ) h ON h.song_id = s.id
+    ORDER BY (COALESCE(h.day_plays, 0) * 3 + COALESCE(h.week_plays, 0)) DESC,
+             s.id DESC
+    LIMIT 300
   `,
   ).all()
-  const weekTopRes = await DB.prepare(
-    `
-    SELECT s.*, h.day_plays, h.week_plays
-    FROM hot_song_stat h
-    LEFT JOIN songs s ON s.id = h.song_id
-    ORDER BY h.week_plays DESC
-    LIMIT 20
-  `,
-  ).all()
+  const rows = results || []
+  if (!rows.length)
+    return jsonResp({ code: 200, msg: '请求成功', data: [] })
 
-  // 日榜在前、周榜补位，按歌曲 id 去重
-  const merged = new Map()
-  for (const item of [...(dayTopRes.results || []), ...(weekTopRes.results || [])]) {
-    if (!merged.has(item.id)) {
-      merged.set(item.id, item)
+  const maxIdRow = await DB.prepare('SELECT COALESCE(MAX(id), 1) AS maxId FROM songs').first()
+  const maxId = Number(maxIdRow?.maxId) || 1
+
+  // 用户偏好信号：收藏歌曲、历史播放、歌手权重
+  const favoriteIds = new Set()
+  const playedIds = new Set()
+  const artistWeight = new Map()
+  if (userId) {
+    const [favSongs, historySongs] = await Promise.all([
+      DB.prepare(
+        `
+        SELECT s.id, s.artist
+        FROM user_favorite f
+        JOIN songs s ON s.id = f.song_id
+        WHERE f.user_id = ?
+      `,
+      ).bind(userId).all(),
+      DB.prepare(
+        `
+        SELECT s.id, s.artist
+        FROM user_play_record p
+        JOIN songs s ON s.id = p.song_id
+        WHERE p.user_id = ?
+      `,
+      ).bind(userId).all(),
+    ])
+    for (const row of favSongs.results || []) {
+      favoriteIds.add(row.id)
+      if (row.artist)
+        artistWeight.set(row.artist, (artistWeight.get(row.artist) || 0) + 3)
+    }
+    for (const row of historySongs.results || []) {
+      playedIds.add(row.id)
+      if (row.artist)
+        artistWeight.set(row.artist, (artistWeight.get(row.artist) || 0) + 1)
     }
   }
-  const data = Array.from(merged.values()).map(item => mapSongRow(item))
+
+  const scored = rows.map((row) => {
+    const day = Number(row.day_plays) || 0
+    const week = Number(row.week_plays) || 0
+    // 新鲜度：越新加分越高，最多 12 分，帮助零播放的新歌进入榜单
+    const freshness = (Number(row.id) / maxId) * 12
+    const affinity = row.artist ? (artistWeight.get(row.artist) || 0) * 2 : 0
+    const favoriteBonus = favoriteIds.has(row.id) ? 6 : 0
+    // 已经听过的歌降权而不是直接剔除，保留复听可能
+    const playedPenalty = playedIds.has(row.id) ? 10 : 0
+    const score = day * 3 + week + freshness + affinity + favoriteBonus - playedPenalty
+    return { row, score }
+  })
+
+  scored.sort((a, b) => b.score - a.score)
+
+  // 同一歌手最多两首，避免整页都是同一个人的歌
+  const artistCount = new Map()
+  const data = []
+  for (const { row } of scored) {
+    const artist = row.artist || ''
+    if (artist) {
+      const used = artistCount.get(artist) || 0
+      if (used >= 2) continue
+      artistCount.set(artist, used + 1)
+    }
+    data.push(mapSongRow(row))
+    if (data.length >= 30) break
+  }
+
   return jsonResp({ code: 200, msg: '请求成功', data })
 }
 
@@ -945,7 +1376,8 @@ async function handleGetMyPlaylists(request, env) {
         WHERE ps.playlist_id = p.id
       ) as count,
       u.nickname as nickname,
-      u.avatar_url as avatar
+      u.avatar_url as avatar,
+      u.vip_level as vip_level
     FROM user_playlist p
     LEFT JOIN user_playlist_sub s
       ON p.id = s.playlist_id AND s.user_id = ?
@@ -1059,6 +1491,21 @@ async function handleSortPlaylistSongs(request, env) {
   return jsonResp({ code: 200, msg: '排序已更新' })
 }
 
+/** 歌单歌曲降序 POST /api/playlist/demote-song：播放失败的歌曲移到歌单末尾 */
+async function handleDemotePlaylistSong(request, env) {
+  const { playlistId, id } = await request.json().catch(() => ({}))
+  if (!playlistId || !id) return jsonResp({ code: 400, msg: '参数不全' })
+  const DB = env.DB
+  const row = await DB.prepare(
+    'SELECT MAX(sort) AS maxSort FROM playlist_song WHERE playlist_id = ?',
+  ).bind(playlistId).first()
+  const nextSort = (Number(row?.maxSort) || 0) + 1
+  await DB.prepare('UPDATE playlist_song SET sort = ? WHERE playlist_id = ? AND song_id = ?')
+    .bind(nextSort, playlistId, id)
+    .run()
+  return jsonResp({ code: 200, msg: '已降到末尾' })
+}
+
 /** 歌单移除歌曲 POST /api/playlist/remove-song */
 async function handleRemovePlaylistSong(request, env) {
   const { playlistId, id } = await request.json()
@@ -1071,13 +1518,18 @@ async function handleRemovePlaylistSong(request, env) {
   return jsonResp({ code: 200, msg: '已移除' })
 }
 
-/** 删除我创建的歌单 POST /api/playlist/delete */
+/** 删除歌单 POST /api/playlist/delete：作者本人或管理员 */
 async function handleDeletePlaylist(request, env) {
   const userId = getRequestUserId(request)
   const { id } = await request.json()
   if (!id) return jsonResp({ code: 400, msg: '缺少歌单id' })
   const DB = env.DB
-  await DB.prepare(`DELETE FROM user_playlist WHERE id=? AND user_id=?`).bind(id, userId).run()
+  const adminId = await requireAdmin(request, env)
+  if (adminId) {
+    await DB.prepare(`DELETE FROM user_playlist WHERE id=?`).bind(id).run()
+  } else {
+    await DB.prepare(`DELETE FROM user_playlist WHERE id=? AND user_id=?`).bind(id, userId).run()
+  }
   return jsonResp({ code: 200, msg: '歌单已删除' })
 }
 /** 取消收藏歌单 POST /api/subPlaylist/delete */
@@ -1114,7 +1566,8 @@ async function handleGetDiscoverPlaylists(request, env) {
         WHERE ps.playlist_id = p.id
       ) as count,
       u.nickname as nickname,
-      u.avatar_url as avatar
+      u.avatar_url as avatar,
+      u.vip_level as vip_level
     FROM user_playlist p
     LEFT JOIN (
       SELECT playlist_id, COUNT(*) AS subscribe_count
@@ -1160,7 +1613,8 @@ async function handleSearchPlaylists(request, env) {
         WHERE ps.playlist_id = p.id
       ) as count,
       u.nickname as nickname,
-      u.avatar_url as avatar
+      u.avatar_url as avatar,
+      u.vip_level as vip_level
     FROM user_playlist p
     LEFT JOIN (
       SELECT playlist_id, COUNT(*) AS subscribe_count
@@ -1207,7 +1661,8 @@ async function handleGetPlaylistInfo(request, env) {
         WHERE ps.playlist_id = p.id
       ) as count,
       u.nickname as nickname,
-      u.avatar_url as avatar
+      u.avatar_url as avatar,
+      u.vip_level as vip_level
     FROM user_playlist p
     LEFT JOIN (
       SELECT playlist_id, COUNT(*) AS subscribe_count
@@ -1406,6 +1861,7 @@ function mapCommentRow(row, liked, currentUserId) {
     userId: row.user_id,
     nickname: row.nickname || '',
     avatar: row.avatar || '',
+    vipLevel: Number(row.vip_level) || 0,
     content: row.content,
     parentId: row.parent_id,
     likeCount: row.like_count,
@@ -1435,6 +1891,7 @@ async function handleGetComments(request, env) {
   const sql = `SELECT c.*,
       u.nickname AS nickname,
       u.avatar_url AS avatar,
+      u.vip_level AS vip_level,
       (SELECT COUNT(*) FROM song_comment r WHERE r.parent_id = c.id) AS reply_count,
       EXISTS(SELECT 1 FROM song_comment_like l WHERE l.comment_id = c.id AND l.user_id = ?) AS liked
     FROM song_comment c
@@ -1502,6 +1959,7 @@ async function handleAddComment(request, env) {
       userId: String(userId),
       nickname: identity.nickname,
       avatar: identity.avatar,
+      vipLevel: identity.vipLevel,
       content,
       parentId,
       likeCount: 0,
@@ -1545,7 +2003,7 @@ async function handleToggleCommentLike(request, env) {
   return jsonResp({ code: 200, msg: '操作成功', data: { liked: !likedRow, likeCount } })
 }
 
-/** 删除自己的评论 POST /api/song/comment/delete { id }：连同其回复一并删除 */
+/** 删除评论 POST /api/song/comment/delete { id }：作者本人或管理员，连同其回复一并删除 */
 async function handleDeleteComment(request, env) {
   const userId = getRequestUserId(request)
   if (!userId) {
@@ -1560,7 +2018,8 @@ async function handleDeleteComment(request, env) {
   if (!comment) {
     return jsonResp({ code: 404, msg: '评论不存在' }, 404)
   }
-  if (String(comment.user_id) !== String(userId)) {
+  const isAuthor = String(comment.user_id) === String(userId)
+  if (!isAuthor && !(await requireAdmin(request, env))) {
     return jsonResp({ code: 403, msg: '只能删除自己的评论' }, 403)
   }
 
@@ -2233,14 +2692,14 @@ const WISH_MAX_LENGTH = 100
 const WISH_MESSAGE_MAX_LENGTH = 200
 const WISH_LIST_LIMIT = 120
 
-/** 读取用户展示信息（昵称 + 头像），用于心愿/评论/歌单等场景 */
+/** 读取用户展示信息（昵称 + 头像 + VIP 等级），用于心愿/评论/歌单等场景 */
 async function getUserIdentity(env, userId) {
   if (!userId)
-    return { nickname: '', avatar: '' }
-  const row = await env.DB.prepare('SELECT nickname, avatar_url FROM users WHERE id = ?')
+    return { nickname: '', avatar: '', vipLevel: 0 }
+  const row = await env.DB.prepare('SELECT nickname, avatar_url, vip_level FROM users WHERE id = ?')
     .bind(userId)
     .first()
-  return { nickname: row?.nickname || '', avatar: row?.avatar_url || '' }
+  return { nickname: row?.nickname || '', avatar: row?.avatar_url || '', vipLevel: Number(row?.vip_level) || 0 }
 }
 
 /** 心愿行 → 前端结构 */
@@ -2250,6 +2709,7 @@ function mapWishRow(row, userId) {
     userId: String(row.user_id),
     nickname: row.nickname || '',
     avatar: row.avatar || '',
+    vipLevel: Number(row.vip_level) || 0,
     content: row.content,
     likeCount: Number(row.like_count) || 0,
     messageCount: Number(row.message_count) || 0,
@@ -2267,6 +2727,7 @@ function mapWishMessageRow(row, userId) {
     userId: String(row.user_id),
     nickname: row.nickname || '',
     avatar: row.avatar || '',
+    vipLevel: Number(row.vip_level) || 0,
     content: row.content,
     mine: String(row.user_id) === String(userId || ''),
     createTime: toEpochMs(row.create_time),
@@ -2280,6 +2741,7 @@ async function handleGetWishes(request, env) {
     `SELECT w.*,
       u.nickname AS nickname,
       u.avatar_url AS avatar,
+      u.vip_level AS vip_level,
       (SELECT COUNT(*) FROM wish_message m WHERE m.wish_id = w.id) AS message_count,
       EXISTS(SELECT 1 FROM wish_like l WHERE l.wish_id = w.id AND l.user_id = ?) AS liked
     FROM wish w
@@ -2333,6 +2795,7 @@ async function handleAddWish(request, env) {
       userId: String(userId),
       nickname: identity.nickname,
       avatar: identity.avatar,
+      vipLevel: identity.vipLevel,
       content,
       likeCount: 0,
       messageCount: 0,
@@ -2387,7 +2850,8 @@ async function handleGetWishMessages(request, env) {
   const { results } = await env.DB.prepare(
     `SELECT m.*,
       u.nickname AS nickname,
-      u.avatar_url AS avatar
+      u.avatar_url AS avatar,
+      u.vip_level AS vip_level
     FROM wish_message m
     LEFT JOIN users u ON u.id = m.user_id
     WHERE m.wish_id = ?
@@ -2437,10 +2901,30 @@ async function handleAddWishMessage(request, env) {
       userId: String(userId),
       nickname: identity.nickname,
       avatar: identity.avatar,
+      vipLevel: identity.vipLevel,
       content,
       mine: true,
       createTime: now,
       messageCount: countRow?.count || 0,
     },
   })
+}
+
+/** 管理员删除心愿 POST /api/wish/delete { id }：连同点赞与留言一并删除 */
+async function handleDeleteWish(request, env) {
+  const adminId = await requireAdmin(request, env)
+  if (!adminId)
+    return jsonResp({ code: 403, msg: '无管理员权限' }, 403)
+  const body = await request.json().catch(() => ({}))
+  const id = Number(body.id)
+  if (!id)
+    return jsonResp({ code: 400, msg: '参数错误' })
+  const DB = env.DB
+  const wish = await DB.prepare('SELECT id FROM wish WHERE id = ?').bind(id).first()
+  if (!wish)
+    return jsonResp({ code: 404, msg: '心愿不存在' }, 404)
+  await DB.prepare('DELETE FROM wish_like WHERE wish_id = ?').bind(id).run()
+  await DB.prepare('DELETE FROM wish_message WHERE wish_id = ?').bind(id).run()
+  await DB.prepare('DELETE FROM wish WHERE id = ?').bind(id).run()
+  return jsonResp({ code: 200, msg: '心愿已删除' })
 }

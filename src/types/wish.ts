@@ -6,6 +6,8 @@ export interface Wish {
   nickname?: string
   /** 作者头像（base64 / data URL） */
   avatar?: string
+  /** 作者 VIP 等级 */
+  vipLevel?: number
   content: string
   likeCount: number
   messageCount: number
@@ -23,6 +25,8 @@ export interface WishMessage {
   nickname?: string
   /** 留言者头像 */
   avatar?: string
+  /** 留言者 VIP 等级 */
+  vipLevel?: number
   content: string
   mine: boolean
   createTime: number

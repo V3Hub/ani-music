@@ -40,6 +40,7 @@
             :src="authorAvatar"
           />
           <span class="username">{{ authorName }}</span>
+          <VipBadge :level="activePlaylist?.vip_level" small />
           <span v-if="activePlaylist?.desc" class="playlist-desc">{{ activePlaylist.desc }}</span>
         </div>
 
@@ -96,6 +97,7 @@ import { PlaylistSource } from '@/constants/playlist'
 import { playByIndex } from '@/services/audio-player'
 import { usePlayerStore } from '@/stores/player'
 import PlaylistActionSheet from '@/components/playlist/PlaylistActionSheet.vue'
+import VipBadge from '@/components/common/VipBadge.vue'
 import WaveBox from '@/components/waveBox/WaveBox.vue'
 import { getPlaylistShareCount } from '@/api/music'
 import { sharePlaylist } from '@/utils/share'

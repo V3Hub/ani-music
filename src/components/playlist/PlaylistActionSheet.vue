@@ -24,13 +24,15 @@
             {{ playlist.name }}
           </div>
           <div class="head-owner">
-            @{{ ownerName }} · {{ shareCount ?? 0 }} 人分享
+            <span>@{{ ownerName }}</span>
+            <VipBadge :level="playlist.vip_level" small />
+            <span>· {{ shareCount ?? 0 }} 人分享</span>
           </div>
         </div>
       </div>
 
       <div class="action-list">
-        <button v-if="isOwner" type="button" class="action-item" @click="emit('delete')">
+        <button v-if="isOwner || profileStore.isAdmin" type="button" class="action-item" @click="emit('delete')">
           <van-icon name="delete-o" size="22" class="action-icon" />
           <span>删除歌单</span>
         </button>
@@ -53,6 +55,8 @@
 
 <script setup lang="ts">
 import type { PlaylistItem } from '@/types/music'
+import VipBadge from '@/components/common/VipBadge.vue'
+import { useUserProfileStore } from '@/stores/userProfile'
 import { computed, ref } from 'vue'
 
 const props = defineProps<{
@@ -64,6 +68,9 @@ const props = defineProps<{
   /** 歌单分享人数 */
   shareCount?: number
 }>()
+
+/** 管理员可删除任意歌单 */
+const profileStore = useUserProfileStore()
 
 /** 作者展示名：真实昵称优先，其次 userToken，最后 guest */
 const ownerName = computed(() => props.playlist?.nickname || props.playlist?.userToken || 'guest')
@@ -206,6 +213,9 @@ const dragHandlers = {
   }
 
   .head-owner {
+    display: flex;
+    align-items: center;
+    gap: 5px;
     font-size: 12px;
     opacity: 0.55;
   }

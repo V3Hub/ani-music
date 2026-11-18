@@ -103,6 +103,32 @@ export const usePlayerStore = defineStore('player', () => {
       : prev
   }
 
+  /** 把指定歌曲移到队列末尾（播放失败降序用），当前索引同步指向该歌曲 */
+  function moveSongToEnd(songId: Song['id']) {
+    const target = playList.value.find(item => item.id === songId)
+    if (!target)
+      return
+    playList.value = [...playList.value.filter(item => item.id !== songId), target]
+    currentIndex.value = playList.value.length - 1
+  }
+
+  /** 调整队列顺序：移动后保持当前播放歌曲与索引一致 */
+  function moveSong(from: number, to: number) {
+    const len = playList.value.length
+    if (from === to || from < 0 || to < 0 || from >= len || to >= len)
+      return
+    const currentId = currentSong.value?.id
+    const next = [...playList.value]
+    const [moved] = next.splice(from, 1)
+    next.splice(to, 0, moved)
+    playList.value = next
+    if (currentId !== undefined) {
+      const index = next.findIndex(item => item.id === currentId)
+      if (index >= 0)
+        currentIndex.value = index
+    }
+  }
+
   return {
     // state
     playList,
@@ -132,5 +158,7 @@ export const usePlayerStore = defineStore('player', () => {
     setQueueSource,
     nextIndex,
     prevIndex,
+    moveSongToEnd,
+    moveSong,
   }
 })

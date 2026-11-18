@@ -159,15 +159,6 @@ export async function removeSongFromPlayRecord(songId: number): Promise<boolean>
   }
 }
 
-/** 播放结束上报，用于热门榜统计；失败静默，不影响播放 */
-export async function reportPlay(songId: number | string): Promise<void> {
-  try {
-    await request.post('/api/play/report', { id: songId })
-  } catch {
-    // 上报失败无需打扰用户
-  }
-}
-
 // ==================== 歌单 ====================
 
 export async function createPlaylist(name: string, desc: string): Promise<boolean> {
@@ -212,6 +203,15 @@ export async function removeSongFromPlaylist(id: number, playlistId: number): Pr
     return true
   } catch {
     return false
+  }
+}
+
+/** 播放失败后把歌曲降到歌单末尾，失败不影响播放流程 */
+export async function demoteSongInPlaylist(id: number | string, playlistId: number): Promise<void> {
+  try {
+    await request.post('/api/playlist/demote-song', { id, playlistId })
+  } catch {
+    // 静默失败：降序只是体验优化
   }
 }
 

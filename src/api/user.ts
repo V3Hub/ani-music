@@ -8,19 +8,66 @@
  */
 import { getThumbmark } from '@thumbmarkjs/thumbmarkjs'
 import { useUserStore } from '@/stores/user'
-import type { LoginResult, UserProfile } from '@/types/user'
+import type { LoginResponse, RegisterPayload, RegistrationItem, RegistrationProgress, UserProfile } from '@/types/user'
 import { request } from '@/utils/request'
 
 let pendingBootstrap: Promise<string | null> | null = null
 
-/** 用户名密码登录（不开放注册，账号由管理员在数据库创建） */
-export function login(username: string, password: string) {
-  return request.post<LoginResult>('/api/user/login', { username, password })
+/** 账号密码登录：account 支持用户名 / 手机号 / 邮箱；命中多个账号时传 userId 指定登录哪一个 */
+export function login(account: string, password: string, userId?: number) {
+  return request.post<LoginResponse>('/api/user/login', { account, password, userId })
+}
+
+/** 提交会员注册申请（含付款截图 base64），待管理员审批 */
+export function register(payload: RegisterPayload) {
+  return request.post<null>('/api/user/register', payload)
+}
+
+/** 查询注册审批进度：默认按当前 userToken，传入 username 时按用户名查询 */
+export function getRegisterStatus(username?: string) {
+  return request.get<RegistrationProgress | null>('/api/user/register/status', {
+    params: username ? { username } : {},
+  })
+}
+
+/** 管理员：注册申请列表 */
+export function getAdminRegistrations(status: string = 'pending') {
+  return request.get<RegistrationItem[]>('/api/admin/registrations', { params: { status } })
+}
+
+/** 管理员：审批通过 / 拒绝 */
+export function reviewRegistration(id: number, action: 'approve' | 'reject', rejectReason?: string) {
+  return request.post<null>('/api/admin/registration/review', { id, action, rejectReason })
+}
+
+/** 管理员：调整用户 VIP 等级（1-9），变更自动写入 vip_record */
+export function setUserVipLevel(username: string, level: number, remark?: string) {
+  return request.post<{ userId: number, vipLevel: number }>('/api/admin/user/vip-level', { username, level, remark })
+}
+
+/** VIP 变更记录条目 */
+export interface VipRecord {
+  id: number
+  from_level: number
+  to_level: number
+  change_type: string
+  remark?: string
+  create_time: string
+}
+
+/** 管理员：查询用户 VIP 变更记录 */
+export function getUserVipRecords(username: string) {
+  return request.get<VipRecord[]>('/api/admin/user/vip-records', { params: { username } })
 }
 
 /** 当前登录用户资料：昵称 + 头像（base64） */
 export function getUserProfile() {
   return request.get<UserProfile>('/api/user/profile')
+}
+
+/** 修改当前用户资料：用户名 / 昵称 / 头像（base64），未传的字段保持原值 */
+export function updateUserProfile(payload: { username?: string, nickname?: string, avatar?: string }) {
+  return request.post<UserProfile>('/api/user/profile', payload)
 }
 
 export function ensureAutoToken(): Promise<string | null> {
