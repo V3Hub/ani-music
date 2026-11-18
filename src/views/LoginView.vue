@@ -414,7 +414,7 @@ async function copyHash() {
 }
 
 .pwd-tool {
-  background: #141625;
+  background: var(--popup-bg);
 }
 
 .tool-wrap {

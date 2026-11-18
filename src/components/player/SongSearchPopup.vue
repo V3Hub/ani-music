@@ -4,6 +4,7 @@
     position="right"
     :style="{ width: '100%', height: '100%' }"
     class="search-popup"
+    @closed="reset"
   >
     <div class="search-wrap" :style="swipeStyle" v-on="handlers">
       <div class="search-header">
@@ -101,7 +102,7 @@ const visible = defineModel<boolean>('visible', { required: true })
 const player = usePlayerStore()
 const { state, submitSearch, addSongToQueue, isSongPlaying, closeSearch } = useSongSearch(keyword, visible)
 
-const { swipeStyle, handlers } = useSwipeClose(closeSearch)
+const { swipeStyle, handlers, reset } = useSwipeClose(closeSearch)
 </script>
 
 <style lang="scss" scoped>
@@ -115,7 +116,7 @@ const { swipeStyle, handlers } = useSwipeClose(closeSearch)
   width: 100%;
   height: 100%;
   color: var(--theme-text, #fff);
-  background: var(--theme-background, #1a1a1a);
+  background: var(--popup-bg);
   touch-action: pan-y;
 }
 

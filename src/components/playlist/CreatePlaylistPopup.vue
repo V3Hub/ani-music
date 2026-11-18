@@ -85,8 +85,8 @@ function onSubmit() {
 
 <style lang="scss" scoped>
 .create-playlist-popup {
-  // 深色半透明浮层，和页面主题背景区分开
-  background: var(--theme-background, #1a1a1a) !important;
+  // 在已有弹层之上再打开时，用更亮一层的背景区分
+  background: var(--popup-bg-raised) !important;
   border-top: 1px solid rgba(128, 128, 128, 0.2);
 }
 

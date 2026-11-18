@@ -3,6 +3,7 @@
     v-model:show="visible"
     position="bottom"
     class="queue-popup"
+    @closed="resetDrag"
   >
     <div class="queue-wrap" :style="dragStyle">
       <div class="queue-topbar" v-on="dragHandlers" @click="onTopbarClick">
@@ -176,16 +177,21 @@ function onDragMove(event: TouchEvent) {
 function onDragEnd() {
   if (!dragging.value)
     return
-  dragging.value = false
   if (dragY.value >= 110) {
+    // 保持拖出位置直接关闭，让弹层顺势继续下滑，避免先回弹再关闭的抖动
     visible.value = false
-    // 等弹层下滑动画结束再复位，避免下次打开位置异常
-    setTimeout(() => {
-      dragY.value = 0
-    }, 320)
-  } else {
-    dragY.value = 0
+    return
   }
+  dragging.value = false
+  dragY.value = 0
+}
+
+/** 关闭动画结束后复位位移：无过渡瞬间归零，避免下次打开残留偏移 */
+function resetDrag() {
+  dragY.value = 0
+  requestAnimationFrame(() => {
+    dragging.value = false
+  })
 }
 
 const dragHandlers = {
@@ -222,7 +228,7 @@ function onTopbarClick() {
   padding: 0 16px calc(16px + env(safe-area-inset-bottom));
   box-sizing: border-box;
   color: var(--theme-text, #fff);
-  background: var(--theme-background, #1a1a1a);
+  background: var(--popup-bg);
   touch-action: pan-y;
 
   @media (min-width: 768px) {

@@ -4,6 +4,7 @@
     position="right"
     :style="{ width: '100%', height: '100%' }"
     class="settings-popup"
+    @closed="reset"
   >
     <div class="settings-wrap" :style="swipeStyle" v-on="handlers">
       <div class="settings-header">
@@ -111,7 +112,7 @@ const visible = defineModel<boolean>('visible', { required: true })
 const pickerVisible = defineModel<boolean>('pickerVisible', { required: true })
 const sleepVisible = defineModel<boolean>('sleepVisible', { required: true, default: () => false })
 
-const { swipeStyle, handlers } = useSwipeClose(() => {
+const { swipeStyle, handlers, reset } = useSwipeClose(() => {
   // 子弹层打开时不响应右滑关闭
   if (pickerVisible.value || sleepVisible.value)
     return
@@ -140,7 +141,7 @@ function onPickSleep(minutes: number) {
 .settings-wrap {
   height: 100%;
   color: var(--theme-text, #fff);
-  background: var(--theme-background, #1a1a1a);
+  background: var(--popup-bg);
   display: flex;
   flex-direction: column;
   touch-action: pan-y;
@@ -237,7 +238,7 @@ function onPickSleep(minutes: number) {
 .source-sheet {
   padding: 4px 20px calc(20px + env(safe-area-inset-bottom));
   color: var(--theme-text, #fff);
-  background: var(--theme-background, #1a1a1a);
+  background: var(--popup-bg-raised);
 
   .sheet-title {
     padding: 16px 0;
@@ -280,7 +281,7 @@ function onPickSleep(minutes: number) {
 .sleep-sheet {
   padding: 4px 20px calc(20px + env(safe-area-inset-bottom));
   color: var(--theme-text, #fff);
-  background: var(--theme-background, #1a1a1a);
+  background: var(--popup-bg-raised);
 
   .sheet-title {
     padding: 16px 0;

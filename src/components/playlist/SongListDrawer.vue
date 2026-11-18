@@ -4,6 +4,7 @@
     position="right"
     class="song-list-popup"
     :style="{ width: '100%', height: '100%' }"
+    @closed="reset"
   >
     <div class="song-list" :style="swipeStyle" v-on="handlers">
       <div class="detail-header">
@@ -190,7 +191,7 @@ async function playSongList(id?: string | number) {
 }
 
 // ========== 右滑关闭 ==========
-const { swipeStyle, handlers } = useSwipeClose(() => {
+const { swipeStyle, handlers, reset } = useSwipeClose(() => {
   if (playlistActionVisible.value)
     return
   visible.value = false
@@ -208,7 +209,7 @@ const { swipeStyle, handlers } = useSwipeClose(() => {
   width: 100%;
   height: 100%;
   color: var(--theme-text, #fff);
-  background: var(--theme-background, #1a1a1a);
+  background: var(--popup-bg);
   touch-action: pan-y;
 
   .detail-header {

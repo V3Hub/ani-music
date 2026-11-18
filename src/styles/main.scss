@@ -10,6 +10,14 @@
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior: none;
 }
+/* 弹层背景：一级弹框在主题底色上叠一层很浅的白，和页面背景拉开一点点；
+ * 二级弹层（在弹层里再打开的编辑器/选择器）再亮一层，避免两层弹框糊在一起 */
+:root {
+  --popup-bg: linear-gradient(rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.05)), var(--theme-background, #141625);
+  --popup-bg-raised:
+    linear-gradient(rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0.13)), var(--theme-background, #141625);
+}
+
 /* 弹层遮罩（popup / dialog / notify 等）全部透明，让深色主题透出来 */
 .van-overlay {
   background-color: transparent !important;

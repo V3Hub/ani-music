@@ -5,6 +5,7 @@
     round
     teleport="body"
     class="comment-popup"
+    @closed="mainDrag.reset"
   >
     <div class="comment-wrap" :style="mainDrag.style.value">
       <header
@@ -83,7 +84,7 @@
                   <van-icon
                     :name="reply.liked ? 'like' : 'like-o'"
                     :color="reply.liked ? '#FF5C7C' : 'rgba(255,255,255,0.6)'"
-                    size="16"
+                    size="13"
                   />
                   <span v-if="reply.likeCount">{{ reply.likeCount }}</span>
                 </button>
@@ -103,7 +104,7 @@
             <van-icon
               :name="item.liked ? 'like' : 'like-o'"
               :color="item.liked ? '#FF5C7C' : 'rgba(255,255,255,0.6)'"
-              size="16"
+              size="14"
             />
             <span v-if="item.likeCount">{{ item.likeCount }}</span>
           </button>
@@ -417,6 +418,14 @@ function createDragClose(onClose: () => void) {
   /** 本次交互是否发生了拖动：拖动松手后的 click 不当作“点击关闭” */
   let dragged = false
 
+  /** 关闭动画结束后复位位移：无过渡瞬间归零，避免下次打开残留偏移 */
+  function reset() {
+    dragY.value = 0
+    requestAnimationFrame(() => {
+      dragging.value = false
+    })
+  }
+
   return {
     style: computed(() => ({
       transform: `translate3d(0, ${dragY.value}px, 0)`,
@@ -447,17 +456,20 @@ function createDragClose(onClose: () => void) {
           event.preventDefault()
       },
       touchend() {
-        const shouldClose = dragging.value && dragY.value >= CLOSE_DISTANCE
+        if (dragging.value && dragY.value >= CLOSE_DISTANCE) {
+          // 保持拖出位置直接关闭，让弹层顺势继续下滑，避免先回弹再关闭的抖动
+          onClose()
+          return
+        }
         dragging.value = false
         dragY.value = 0
-        if (shouldClose)
-          onClose()
       },
       touchcancel() {
         dragging.value = false
         dragY.value = 0
       },
     },
+    reset,
     /** 上一次按下后是否发生了拖动（用于避免拖动结束误触发点击关闭） */
     wasDragged: () => dragged,
   }
@@ -488,7 +500,7 @@ function onHeaderClick() {
   flex-direction: column;
   height: 100%;
   color: var(--theme-text, #fff);
-  background: #141625;
+  background: var(--popup-bg);
   border-radius: inherit;
   will-change: transform;
 }
@@ -563,7 +575,7 @@ function onHeaderClick() {
 .comment-scroll {
   flex: 1;
   min-height: 0;
-  padding: 4px 18px 12px;
+  padding: 0 14px 8px;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }
@@ -571,29 +583,29 @@ function onHeaderClick() {
 .comment-item {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  padding: 14px;
-  border-radius: 18px;
+  gap: 8px;
+  padding: 9px 10px;
+  border-radius: 14px;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.14);
-  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.24);
 
   & + .comment-item {
-    margin-top: 12px;
+    margin-top: 6px;
   }
 }
 
 .avatar {
   flex-shrink: 0;
-  width: 38px;
-  height: 38px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   object-fit: cover;
   background: rgba(255, 255, 255, 0.08);
 
   &.small {
-    width: 28px;
-    height: 28px;
+    width: 20px;
+    height: 20px;
   }
 }
 
@@ -603,8 +615,8 @@ function onHeaderClick() {
 }
 
 .author {
-  margin: 0 0 6px;
-  font-size: 12px;
+  margin: 0 0 2px;
+  font-size: 10px;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -613,8 +625,8 @@ function onHeaderClick() {
 
 .content {
   margin: 0;
-  font-size: 14px;
-  line-height: 1.6;
+  font-size: 13px;
+  line-height: 1.45;
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -622,15 +634,15 @@ function onHeaderClick() {
 .meta {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-top: 8px;
-  font-size: 12px;
+  gap: 8px;
+  margin-top: 3px;
+  font-size: 10px;
   opacity: 0.5;
 
   .meta-btn {
     padding: 0;
     border: none;
-    font-size: 12px;
+    font-size: 10px;
     color: inherit;
     background: transparent;
     cursor: pointer;
@@ -645,11 +657,11 @@ function onHeaderClick() {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: 1px;
   flex-shrink: 0;
-  padding: 4px 0 0 4px;
+  padding: 1px 0 0 2px;
   border: none;
-  font-size: 11px;
+  font-size: 9px;
   color: inherit;
   background: transparent;
   opacity: 0.75;
@@ -657,9 +669,9 @@ function onHeaderClick() {
 }
 
 .reply-list {
-  margin-top: 10px;
-  padding: 10px 12px;
-  border-radius: 14px;
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-radius: 10px;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
@@ -667,26 +679,26 @@ function onHeaderClick() {
 .reply-item {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: 6px;
 
   & + .reply-item {
-    margin-top: 10px;
+    margin-top: 6px;
   }
 
   .author {
-    font-size: 11px;
+    font-size: 9px;
   }
 
   .content {
-    font-size: 14px;
+    font-size: 12px;
   }
 }
 
 .expand-btn {
-  margin-top: 8px;
+  margin-top: 5px;
   padding: 0;
   border: none;
-  font-size: 12px;
+  font-size: 10px;
   color: rgba(255, 255, 255, 0.6);
   background: transparent;
   cursor: pointer;
@@ -706,7 +718,7 @@ function onHeaderClick() {
   flex-shrink: 0;
   padding: 10px 16px calc(12px + env(safe-area-inset-bottom));
   border-top: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(16, 11, 32, 0.6);
+  background: rgba(0, 0, 0, 0.18);
 }
 
 .foot-trigger {
@@ -737,7 +749,7 @@ function onHeaderClick() {
 }
 
 .editor-popup {
-  background: #141625;
+  background: var(--popup-bg-raised);
 }
 
 .editor-wrap {

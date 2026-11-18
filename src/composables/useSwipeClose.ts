@@ -66,10 +66,21 @@ export function useSwipeClose(onClose: () => void, options: SwipeCloseOptions = 
   function onTouchEnd() {
     const shouldClose = isHorizontal && offsetX.value >= threshold
     isHorizontal = false
+    if (shouldClose) {
+      // 保持当前拖出位置直接关闭，让弹层顺势继续滑出，避免先回弹再关闭的抖动
+      onClose()
+      return
+    }
     dragging.value = false
     offsetX.value = 0
-    if (shouldClose)
-      onClose()
+  }
+
+  /** 关闭动画结束后复位位移：无过渡瞬间归零，避免下次打开残留偏移 */
+  function reset() {
+    offsetX.value = 0
+    requestAnimationFrame(() => {
+      dragging.value = false
+    })
   }
 
   const swipeStyle = computed(() => ({
@@ -80,6 +91,7 @@ export function useSwipeClose(onClose: () => void, options: SwipeCloseOptions = 
 
   return {
     swipeStyle,
+    reset,
     // v-on 对象绑定的 key 必须是事件名本身（不能带 on 前缀）
     handlers: {
       touchstart: onTouchStart,

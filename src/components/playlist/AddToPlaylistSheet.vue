@@ -81,7 +81,7 @@ const LOGO_URL = '/qs.svg'
 
 <style lang="scss" scoped>
 .add-to-playlist-popup {
-  background: var(--theme-background, #1a1a1a) !important;
+  background: var(--popup-bg-raised) !important;
 }
 
 .add-to-playlist {

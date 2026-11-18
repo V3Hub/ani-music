@@ -7,7 +7,7 @@
     class="wish-detail-popup"
     :style="{ height: '74%' }"
     @update:show="emit('update:visible', $event)"
-    @closed="emit('closed')"
+    @closed="onClosed"
   >
     <div class="detail-wrap" :style="dragStyle">
       <header
@@ -206,11 +206,21 @@ function resetDrag() {
   dragY.value = 0
 }
 
+/** 关闭动画结束后复位位移：无过渡瞬间归零，避免下次打开残留偏移 */
+function resetDragSnap() {
+  dragY.value = 0
+  requestAnimationFrame(() => {
+    dragging.value = false
+  })
+}
+
 function onDragEnd() {
-  const shouldClose = dragging.value && dragY.value >= CLOSE_DISTANCE
-  resetDrag()
-  if (shouldClose)
+  if (dragging.value && dragY.value >= CLOSE_DISTANCE) {
+    // 保持拖出位置直接关闭，让弹层顺势继续下滑，避免先回弹再关闭的抖动
     close()
+    return
+  }
+  resetDrag()
 }
 
 function onDragCancel() {
@@ -225,6 +235,11 @@ function onHeadClick() {
 
 function close() {
   emit('update:visible', false)
+}
+
+function onClosed() {
+  resetDragSnap()
+  emit('closed')
 }
 
 async function loadMessages() {
@@ -246,8 +261,8 @@ watch(
   () => props.visible,
   async (visible) => {
     if (!visible) {
+      // 位移留到关闭动画结束（@closed）再复位，避免关闭过程中先回弹再下滑
       editorVisible.value = false
-      resetDrag()
       dragged = false
       return
     }
@@ -327,7 +342,7 @@ async function sendMessage() {
   flex-direction: column;
   height: 100%;
   border-radius: inherit;
-  background: #141625;
+  background: var(--popup-bg);
   will-change: transform;
 }
 
@@ -556,7 +571,7 @@ async function sendMessage() {
   flex-shrink: 0;
   padding: 10px 16px calc(12px + env(safe-area-inset-bottom));
   border-top: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(16, 11, 32, 0.6);
+  background: rgba(0, 0, 0, 0.18);
 }
 
 .foot-trigger {
@@ -579,7 +594,7 @@ async function sendMessage() {
 }
 
 .message-editor {
-  background: #141625;
+  background: var(--popup-bg-raised);
 }
 
 .editor-wrap {
