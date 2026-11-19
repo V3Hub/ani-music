@@ -59,8 +59,11 @@ function shouldBump(message) {
   // chore 类型（非 release）跳过
   if (/^chore[:(]/i.test(firstLine))
     return false
-  // 空消息或纯 merge commit
-  if (!firstLine || firstLine.startsWith('Merge'))
+  // merge / revert / fixup / squash 等自动生成的 commit 跳过
+  if (/^(Merge|Revert|Reapply|fixup!|squash!)\b/i.test(firstLine))
+    return false
+  // 空消息跳过
+  if (!firstLine)
     return false
   return true
 }
