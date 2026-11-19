@@ -16,6 +16,13 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.1.5',
+    date: '2026-11-19',
+    items: [
+      { type: 'fix', text: 'release 脚本 lint 注释清理' },
+    ],
+  },
+  {
     version: '0.1.4',
     date: '2026-11-19',
     items: [
