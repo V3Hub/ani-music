@@ -12,6 +12,12 @@ import './styles/main.scss'
 
 const LAST_SEEN_VERSION_KEY = 'ani.last_seen_version'
 
+// 描述文件（Web Clip）安装后以独立模式启动，单独为顶部状态栏留白
+const standalone = (navigator as Navigator & { standalone?: boolean }).standalone === true
+  || window.matchMedia('(display-mode: standalone)').matches
+if (standalone)
+  document.documentElement.classList.add('is-standalone')
+
 async function bootstrap() {
   try {
     const app = createApp(App)
