@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+/* eslint-disable regexp/no-unused-capturing-group, regexp/no-super-linear-backtracking, regexp/no-useless-assertions */
+/* eslint-disable no-console */
 /**
  * 版本号自动 bump + changelog 追加脚本
  *
@@ -77,7 +79,7 @@ function parseItemsFromMessage(message) {
     if (!line)
       continue
     // 跳过 Conventional Commits 的 footer 区块
-    if (/^[A-Za-z-]+:/i.test(line) && line.length < 20)
+    if (/^[A-Z-]+:/i.test(line) && line.length < 20)
       continue
     // 过滤 merge / revert / chore 等
     if (/^(Merge|Revert|chore|ci|style|perf|refactor)\b/i.test(line))
@@ -100,7 +102,7 @@ function parseItem(raw) {
     return { type: normalized, text: ccMatch[2].trim() }
   }
   // 中文前缀
-  const cnMatch = raw.match(/^(新增|修复|优化|文档|其他)\s*[：:]?\s*(.+)$/)
+  const cnMatch = raw.match(/^(新增|修复|优化|文档|其他)\s*(?:[：:]\s*)?(.+)$/)
   if (cnMatch) {
     const map = { 新增: 'feat', 修复: 'fix', 优化: 'opt', 文档: 'docs', 其他: 'other' }
     return { type: map[cnMatch[1]], text: cnMatch[2].trim() }
@@ -166,7 +168,7 @@ if (dryRun) {
 }
 
 pkg.version = newVersion
-writeFileSync(PKG_PATH, JSON.stringify(pkg, null, 2) + '\n')
+writeFileSync(PKG_PATH, `${JSON.stringify(pkg, null, 2)}\n`)
 console.log(`  package.json: ${oldVersion} → ${newVersion} (${level})`)
 
 // 2. 读取 changelog.ts，在 CHANGELOG 数组首项前插入新版本
@@ -176,12 +178,12 @@ const newEntry = `  {
     version: '${newVersion}',
     date: '${formatDate(new Date())}',
     items: [
-${items.map(item => `      { type: '${item.type}', text: '${item.text.replace(/'/g, "\\'")}' },`).join('\n')}
+${items.map(item => `      { type: '${item.type}', text: '${item.text.replace(/'/g, '\\\'')}' },`).join('\n')}
     ],
   },`
 
 const nextSrc = changelogSrc.replace(
-  /(export const CHANGELOG: ChangelogEntry\[] = \[)\s*\n/,
+  /(export const CHANGELOG: ChangelogEntry\[\] = \[)\s*\n/,
   `$1\n${newEntry}\n`,
 )
 
