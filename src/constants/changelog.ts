@@ -16,6 +16,13 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.1.6',
+    date: '2026-11-19',
+    items: [
+      { type: 'feat', text: '站内消息通知、用户主页留言与轻量版 App 安装' },
+    ],
+  },
+  {
     version: '0.1.5',
     date: '2026-11-19',
     items: [
