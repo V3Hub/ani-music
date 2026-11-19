@@ -16,13 +16,6 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
-    version: '0.1.5',
-    date: '2026-11-19',
-    items: [
-      { type: 'other', text: 'fix:测试钩子自动 bump' },
-    ],
-  },
-  {
     version: '0.1.4',
     date: '2026-11-19',
     items: [
