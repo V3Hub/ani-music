@@ -18,10 +18,12 @@
         :favorite-songs="favoriteSongs"
         :share-counts="shareCounts"
         :comment-counts="commentCounts"
+        :song-tags="songTags"
         @favorite="onFavorite"
         @share="onShareSong"
         @open-comment="onOpenComment"
         @open-queue="queueVisible = true"
+        @open-tags="onOpenSongTags"
       />
       <!-- 前景层：工具栏 + 底栏，z-index 高于 PlayerStage -->
       <div v-show="currentTab === 'music'" class="player-main">
@@ -125,6 +127,8 @@
       @switch-account="handleSwitchAccount"
       @about="openAbout"
       @admin-review="openAdminReview"
+      @admin-error-logs="openAdminErrorLogs"
+      @admin-song-tags="openAdminSongTags"
     />
 
     <CreatePlaylistPopup v-model:visible="createVisible" :submitting="creatingPlaylist" @submit="onCreatePlaylist" />
@@ -139,6 +143,12 @@
       @share="onActionShare"
       @download="onActionDownload"
       @delete="onActionDelete"
+    />
+
+    <SongTagPopup
+      v-model:visible="tagVisible"
+      :song="tagSong"
+      @tags-change="onSongTagsChange"
     />
 
     <AddToPlaylistSheet
@@ -160,7 +170,9 @@
 
 <script setup lang="ts">
 import type { PlaylistItem, Song } from '@/types/music'
+import type { SongTagItem } from '@/types/songTag'
 import { addSongToFavorite, fetchSongs, getFavoriteList, getPlaylistInfo, getRecommendList, getSongCommentCount, getSongDetail, getSongShareCount, removeSongFromFavorite, resolveShareToken } from '@/api/music'
+import { getSongTags } from '@/api/song-tag'
 import { PlaylistSource } from '@/constants/playlist'
 import { showToast } from 'vant'
 import { useListeningMode } from '@/composables/player/useListeningMode'
@@ -192,6 +204,7 @@ import SongCommentPopup from '@/components/player/SongCommentPopup.vue'
 import SongListDrawer from '@/components/playlist/SongListDrawer.vue'
 import CreatePlaylistPopup from '@/components/playlist/CreatePlaylistPopup.vue'
 import SongActionSheet from '@/components/playlist/SongActionSheet.vue'
+import SongTagPopup from '@/components/playlist/SongTagPopup.vue'
 import AddToPlaylistSheet from '@/components/playlist/AddToPlaylistSheet.vue'
 import OwnerPanel from '@/components/owner/OwnerPanel.vue'
 import WelfarePanel from '@/components/welfare/WelfarePanel.vue'
@@ -239,6 +252,12 @@ function openAdminReview() {
   router.push('/admin/review')
 }
 
+/** 打开错误日志页（仅管理员可见入口，接口侧仍有权限校验） */
+function openAdminErrorLogs() {
+  settingsVisible.value = false
+  router.push('/admin/error-logs')
+}
+
 const drawerRef = ref<InstanceType<typeof SongListDrawer>>()
 const searchVisible = ref(false)
 const queueVisible = ref(false)
@@ -247,6 +266,9 @@ const creatingPlaylist = ref(false)
 const songActionVisible = ref(false)
 const addToPlaylistVisible = ref(false)
 const actionSong = ref<Song | null>(null)
+/** 歌曲标签弹框 */
+const tagVisible = ref(false)
+const tagSong = ref<Song | null>(null)
 
 const keyword = ref('')
 const sleepVisible = ref(false)
@@ -258,6 +280,9 @@ const shareCounts = ref<Record<string, number>>({})
 
 /** 歌曲评论数缓存：歌曲 id -> 评论数，切歌时按需拉取 */
 const commentCounts = ref<Record<string, number>>({})
+
+/** 歌曲标签缓存：歌曲 id -> 标签列表，播放页标题旁展示 */
+const songTags = ref<Record<string, SongTagItem[]>>({})
 const commentVisible = ref(false)
 const commentSong = ref<Song | null>(null)
 
@@ -273,6 +298,11 @@ watch(() => player.currentSong?.id, (id) => {
   if (commentCounts.value[key] == null) {
     getSongCommentCount(id).then(({ count }) => {
       commentCounts.value[key] = count
+    }).catch(() => {})
+  }
+  if (songTags.value[key] == null) {
+    getSongTags(id).then((tags) => {
+      songTags.value[key] = tags
     }).catch(() => {})
   }
 }, { immediate: true })
@@ -302,6 +332,12 @@ const {
   setSleepTimer,
 } = usePlaybackSource()
 const { togglePlayback } = usePlaybackControl()
+
+/** 打开歌曲标签管理页（仅管理员可见入口，接口侧仍有权限校验） */
+function openAdminSongTags() {
+  settingsVisible.value = false
+  router.push('/admin/song-tags')
+}
 const { listenTimeText } = useListenTimeStat()
 
 const {
@@ -378,7 +414,7 @@ watch(() => player.queueSource, (source) => {
   currentMode.value = source?.type === 'mode' ? source.mode : ''
 }, { immediate: true })
 
-/** 选择任意模式/场景：统一换成最热歌曲歌单并播放 */
+/** 选择任意模式/场景：按该模式刷新最热歌曲并播放 */
 async function onSelectMode(mode: string) {
   if (switchingMode.value)
     return
@@ -387,7 +423,8 @@ async function onSelectMode(mode: string) {
   // 先占位高亮，失败时回滚到播放前的来源
   player.setQueueSource({ type: 'mode', mode })
   try {
-    const songs = await getRecommendList()
+    // 模式参与最热歌曲排序：切换模式即刷新对应榜单
+    const songs = await getRecommendList(mode)
     if (!songs.length) {
       player.setQueueSource(prevSource)
       showToast('暂时没有推荐歌曲')
@@ -462,6 +499,17 @@ const canDeleteActionSong = computed(() => {
 function onOpenSongActions(song: Song) {
   actionSong.value = song
   songActionVisible.value = true
+}
+
+/** 点击播放页歌曲标签 / 无标签占位：只打开标签弹框 */
+function onOpenSongTags(song: Song) {
+  tagSong.value = song
+  tagVisible.value = true
+}
+
+/** 标签面板增删后同步缓存，标题旁即时刷新 */
+function onSongTagsChange(songId: number | string, tags: SongTagItem[]) {
+  songTags.value[String(songId)] = tags
 }
 
 /** 喜欢 / 取消喜欢当前操作歌曲（即时生效，接口后台同步） */

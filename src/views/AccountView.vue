@@ -5,14 +5,24 @@
         <van-icon name="arrow-left" />
       </button>
       <span class="header-title">账号详情</span>
-      <button type="button" class="edit-btn" @click="openEdit">
-        编辑
-      </button>
+      <span class="header-spacer" />
     </header>
 
     <main class="account-main">
       <section class="profile-card">
-        <img class="avatar" :src="avatarSrc" alt="">
+        <button type="button" class="avatar-btn" :disabled="avatarSaving" @click="fileInput?.click()">
+          <img class="avatar" :src="avatarSrc" alt="">
+          <span class="avatar-mask">
+            <van-icon name="photograph" size="18" />
+          </span>
+        </button>
+        <input
+          ref="fileInput"
+          class="file-input"
+          type="file"
+          accept="image/*"
+          @change="onPickAvatar"
+        >
         <div class="profile-name">
           <h1>{{ displayName }}</h1>
           <VipBadge :level="profileStore.vipLevel" />
@@ -32,23 +42,35 @@
         <ul class="info-list">
           <li class="info-item">
             <span class="info-label">用户名</span>
-            <span class="info-value">{{ profileStore.username || '未设置' }}</span>
+            <button type="button" class="info-value info-edit" @click="openFieldEditor('username')">
+              {{ profileStore.username || '未设置' }}
+              <van-icon name="edit" size="12" />
+            </button>
           </li>
           <li class="info-item">
             <span class="info-label">昵称</span>
-            <span class="info-value">{{ profileStore.nickname || '未设置' }}</span>
+            <button type="button" class="info-value info-edit" @click="openFieldEditor('nickname')">
+              {{ profileStore.nickname || '未设置' }}
+              <van-icon name="edit" size="12" />
+            </button>
           </li>
           <li class="info-item">
             <span class="info-label">会员状态</span>
             <span class="info-value">{{ vipText }}</span>
           </li>
+          <li class="info-item">
+            <span class="info-label">密码</span>
+            <button type="button" class="pwd-btn" @click="openPassword">
+              修改密码
+            </button>
+          </li>
         </ul>
       </section>
     </main>
 
-    <!-- 编辑资料 -->
+    <!-- 修改用户名 / 昵称 -->
     <van-popup
-      v-model:show="editVisible"
+      v-model:show="fieldVisible"
       position="bottom"
       round
       teleport="body"
@@ -56,44 +78,68 @@
     >
       <div class="edit-wrap">
         <div class="edit-title">
-          编辑资料
-        </div>
-
-        <div class="edit-avatar-row">
-          <img class="edit-avatar" :src="editAvatarSrc" alt="">
-          <button type="button" class="avatar-pick" @click="fileInput?.click()">
-            更换头像
-          </button>
-          <input
-            ref="fileInput"
-            class="file-input"
-            type="file"
-            accept="image/*"
-            @change="onPickAvatar"
-          >
+          {{ fieldTitle }}
         </div>
 
         <label class="edit-field">
-          <span class="edit-label">昵称</span>
+          <span class="edit-label">{{ fieldLabel }}</span>
           <input
-            v-model="editNickname"
+            v-model="fieldValue"
             type="text"
             maxlength="20"
-            placeholder="请输入昵称"
-          >
-        </label>
-        <label class="edit-field">
-          <span class="edit-label">用户名</span>
-          <input
-            v-model="editUsername"
-            type="text"
-            maxlength="20"
-            placeholder="2-20 个字符"
+            :placeholder="fieldPlaceholder"
           >
         </label>
 
-        <button type="button" class="edit-save" :disabled="saving" @click="saveProfile">
-          {{ saving ? '保存中…' : '保存' }}
+        <button type="button" class="edit-save" :disabled="fieldSaving" @click="saveField">
+          {{ fieldSaving ? '保存中…' : '保存' }}
+        </button>
+      </div>
+    </van-popup>
+
+    <!-- 修改密码 -->
+    <van-popup
+      v-model:show="pwdVisible"
+      position="bottom"
+      round
+      teleport="body"
+      class="edit-sheet"
+    >
+      <div class="edit-wrap">
+        <div class="edit-title">
+          修改密码
+        </div>
+
+        <label class="edit-field">
+          <span class="edit-label">原密码</span>
+          <input
+            v-model="oldPassword"
+            type="password"
+            maxlength="64"
+            placeholder="请输入原密码"
+          >
+        </label>
+        <label class="edit-field">
+          <span class="edit-label">新密码</span>
+          <input
+            v-model="newPassword"
+            type="password"
+            maxlength="64"
+            placeholder="6-64 个字符"
+          >
+        </label>
+        <label class="edit-field">
+          <span class="edit-label">确认密码</span>
+          <input
+            v-model="confirmPassword"
+            type="password"
+            maxlength="64"
+            placeholder="再次输入新密码"
+          >
+        </label>
+
+        <button type="button" class="edit-save" :disabled="pwdSaving" @click="savePassword">
+          {{ pwdSaving ? '提交中…' : '确认修改' }}
         </button>
       </div>
     </van-popup>
@@ -101,7 +147,7 @@
 </template>
 
 <script setup lang="ts">
-import { updateUserProfile } from '@/api/user'
+import { changePassword, updateUserProfile } from '@/api/user'
 import VipBadge from '@/components/common/VipBadge.vue'
 import { LOGIN_RETURN_OWNER_KEY } from '@/constants/auth'
 import { useUserProfileStore } from '@/stores/userProfile'
@@ -125,70 +171,123 @@ const vipText = computed(() => (
   profileStore.vipLevel > 0 ? `永久 VIP${profileStore.vipLevel}` : '普通用户'
 ))
 
-const editVisible = ref(false)
-const editUsername = ref('')
-const editNickname = ref('')
-const editAvatar = ref('')
-const saving = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
+const avatarSaving = ref(false)
 
-const editAvatarSrc = computed(() => resolveAvatar(
-  editAvatar.value,
-  `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(editUsername.value || String(profileStore.id))}`,
-))
-
-function openEdit() {
-  editUsername.value = profileStore.username
-  editNickname.value = profileStore.nickname
-  editAvatar.value = profileStore.avatar
-  editVisible.value = true
+/** 保存资料并同步本地历史账号，切换账号弹层里的信息一并更新 */
+async function applyUpdate(payload: { username?: string, nickname?: string, avatar?: string }) {
+  const profile = await updateUserProfile(payload)
+  profileStore.applyProfile(profile)
+  const token = userStore.getToken()
+  if (token)
+    userStore.saveAccount(profile, token)
 }
 
-/** 头像压缩到最长边 256px 的 JPEG，控制 D1 单行大小 */
+/** 点击头像直接换头像：压缩到最长边 256px 的 JPEG，控制 D1 单行大小 */
 async function onPickAvatar(event: Event) {
-  const file = (event.target as HTMLInputElement).files?.[0]
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
   if (!file)
     return
+  let avatar = ''
   try {
-    editAvatar.value = await compressImageFile(file, 256, 0.8)
+    avatar = await compressImageFile(file, 256, 0.8)
   } catch {
     showToast('图片读取失败，请换一张试试')
+    input.value = ''
+    return
+  }
+  avatarSaving.value = true
+  try {
+    await applyUpdate({ avatar })
+    showToast('头像已更新')
+  } catch {
+    // 错误提示由拦截器处理
   } finally {
-    ;(event.target as HTMLInputElement).value = ''
+    avatarSaving.value = false
+    input.value = ''
   }
 }
 
-async function saveProfile() {
-  if (saving.value)
+/** 用户名 / 昵称单项编辑 */
+type EditableField = 'username' | 'nickname'
+const fieldVisible = ref(false)
+const editingField = ref<EditableField>('nickname')
+const fieldValue = ref('')
+const fieldSaving = ref(false)
+
+const fieldTitle = computed(() => (editingField.value === 'username' ? '修改用户名' : '修改昵称'))
+const fieldLabel = computed(() => (editingField.value === 'username' ? '用户名' : '昵称'))
+const fieldPlaceholder = computed(() => (editingField.value === 'username' ? '2-20 个字符' : '请输入昵称'))
+
+function openFieldEditor(field: EditableField) {
+  editingField.value = field
+  fieldValue.value = profileStore[field]
+  fieldVisible.value = true
+}
+
+async function saveField() {
+  if (fieldSaving.value)
     return
-  const nickname = editNickname.value.trim()
-  const username = editUsername.value.trim()
-  if (!nickname) {
+  const value = fieldValue.value.trim()
+  if (editingField.value === 'nickname' && !value) {
     showToast('请输入昵称')
     return
   }
-  if (username.length < 2 || username.length > 20) {
+  if (editingField.value === 'username' && (value.length < 2 || value.length > 20)) {
     showToast('用户名需 2-20 个字符')
     return
   }
-  saving.value = true
+  fieldSaving.value = true
   try {
-    const profile = await updateUserProfile({
-      username,
-      nickname,
-      avatar: editAvatar.value,
-    })
-    profileStore.applyProfile(profile)
-    // 同步本地历史账号，切换账号弹层里的信息一并更新
-    const token = userStore.getToken()
-    if (token)
-      userStore.saveAccount(profile, token)
-    editVisible.value = false
+    await applyUpdate({ [editingField.value]: value })
+    fieldVisible.value = false
     showToast('已保存')
   } catch {
     // 错误提示由拦截器处理
   } finally {
-    saving.value = false
+    fieldSaving.value = false
+  }
+}
+
+/** 修改密码 */
+const pwdVisible = ref(false)
+const oldPassword = ref('')
+const newPassword = ref('')
+const confirmPassword = ref('')
+const pwdSaving = ref(false)
+
+function openPassword() {
+  oldPassword.value = ''
+  newPassword.value = ''
+  confirmPassword.value = ''
+  pwdVisible.value = true
+}
+
+async function savePassword() {
+  if (pwdSaving.value)
+    return
+  if (!oldPassword.value) {
+    showToast('请输入原密码')
+    return
+  }
+  if (newPassword.value.length < 6 || newPassword.value.length > 64) {
+    showToast('新密码需 6-64 个字符')
+    return
+  }
+  if (newPassword.value !== confirmPassword.value) {
+    showToast('两次输入的新密码不一致')
+    return
+  }
+  pwdSaving.value = true
+  try {
+    await changePassword({ oldPassword: oldPassword.value, newPassword: newPassword.value })
+    pwdVisible.value = false
+    showToast('密码已修改')
+  } catch {
+    // 错误提示由拦截器处理
+  } finally {
+    pwdSaving.value = false
   }
 }
 
@@ -230,22 +329,9 @@ onMounted(async () => {
 }
 
 .account-header .back-btn,
-.account-header .edit-btn {
+.account-header .header-spacer {
   width: 34px;
   height: 34px;
-}
-
-.account-header .edit-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.6);
-  font-family: inherit;
-  font-size: 13px;
-  cursor: pointer;
 }
 
 .account-header .back-btn {
@@ -288,7 +374,36 @@ onMounted(async () => {
   background: rgba(255, 255, 255, 0.05);
 }
 
+.avatar-btn {
+  position: relative;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.6;
+  }
+}
+
+.avatar-mask {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  border-radius: 0 0 36px 36px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+}
+
 .avatar {
+  display: block;
   width: 72px;
   height: 72px;
   border-radius: 50%;
@@ -372,6 +487,33 @@ onMounted(async () => {
   color: rgba(255, 255, 255, 0.82);
 }
 
+.info-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+
+  .van-icon {
+    opacity: 0.45;
+  }
+}
+
+.pwd-btn {
+  padding: 5px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.8);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
 /* 编辑资料弹层 */
 .edit-sheet {
   background: var(--popup-bg-raised, #1b1b24);
@@ -387,32 +529,6 @@ onMounted(async () => {
   text-align: center;
   font-size: 16px;
   font-weight: 600;
-}
-
-.edit-avatar-row {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin-bottom: 16px;
-}
-
-.edit-avatar {
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.08);
-  object-fit: cover;
-}
-
-.avatar-pick {
-  padding: 7px 14px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.8);
-  font-family: inherit;
-  font-size: 12px;
-  cursor: pointer;
 }
 
 .file-input {

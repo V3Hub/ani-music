@@ -1,7 +1,10 @@
 /**
  * 听歌模式 —— 模式/场景选择与侧栏展开收起（支持左右滑动开合）
  */
+import type { ListeningSceneOption } from '@/constants/player-ui'
+import { getHotSongTags } from '@/api/song-tag'
 import { LISTENING_MODES, LISTENING_SCENES } from '@/constants/player-ui'
+import { getTagIcon } from '@/constants/song-tags'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 export const DEFAULT_MODE_NAME = '模式选择'
@@ -18,15 +21,41 @@ export function useListeningMode() {
   const isCollapsed = ref(true)
   const currentMode = ref('default')
   const modeList = computed(() => LISTENING_MODES)
-  const sceneList = computed(() => LISTENING_SCENES)
+
+  /** 热门标签：其他模式（场景宫格）据此动态生成 */
+  const hotTags = ref<Array<{ tag: string, count: number }>>([])
+
+  /** 标签模式列表；还没有任何歌曲标签时回退到内置场景 */
+  const sceneList = computed<ListeningSceneOption[]>(() => {
+    if (!hotTags.value.length)
+      return LISTENING_SCENES
+    return hotTags.value.map(item => ({
+      value: `tag:${item.tag}`,
+      label: item.tag,
+      icon: getTagIcon(item.tag),
+    }))
+  })
+
+  async function loadTagModes() {
+    try {
+      hotTags.value = await getHotSongTags(9)
+    } catch {
+      // 加载失败时保留上一次的模式，不阻塞侧栏
+    }
+  }
 
   const currentModeName = computed(() => {
     // 空字符串表示当前队列不是听歌模式（播放歌单/搜索列表），显示占位文案
     if (!currentMode.value)
       return DEFAULT_MODE_NAME
-    return LISTENING_MODES.find(mode => mode.value === currentMode.value)?.label
-      || LISTENING_SCENES.find(scene => scene.value === currentMode.value)?.label
-      || DEFAULT_MODE_NAME
+    const matched = LISTENING_MODES.find(mode => mode.value === currentMode.value)?.label
+      || sceneList.value.find(scene => scene.value === currentMode.value)?.label
+    if (matched)
+      return matched
+    // 标签已被删除等情况下仍展示标签名
+    if (currentMode.value.startsWith('tag:'))
+      return currentMode.value.slice(4)
+    return DEFAULT_MODE_NAME
   })
 
   /** 侧栏当前渲染宽度（px）：拖动过程中实时变化 */
@@ -46,6 +75,9 @@ export function useListeningMode() {
   }
 
   function toggleSidebar() {
+    // 每次展开时刷新标签模式，新增的标签能及时出现
+    if (isCollapsed.value)
+      loadTagModes()
     setCollapsed(!isCollapsed.value)
   }
 
@@ -130,6 +162,7 @@ export function useListeningMode() {
 
   onMounted(() => {
     syncMaxWidth()
+    loadTagModes()
     window.addEventListener('resize', syncMaxWidth)
   })
 

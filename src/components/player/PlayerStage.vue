@@ -41,6 +41,24 @@
 
           <div class="song-title">
             <h3>{{ song.title }}</h3>
+            <!-- 当前歌曲标签：无标签时展示占位，点击进入标签面板 -->
+            <button
+              v-if="isCurrent(song) && songTags[String(song.id)]"
+              type="button"
+              class="song-tags"
+              @click="emit('openTags', song)"
+            >
+              <template v-if="songTags[String(song.id)].length">
+                <span v-for="item in visibleTags(song)" :key="item.tag" class="tag tag-solid">#{{ item.tag }}</span>
+                <span v-if="songTags[String(song.id)].length > 2" class="tag tag-outline">
+                  +{{ songTags[String(song.id)].length - 2 }}
+                </span>
+              </template>
+              <span v-else class="tag tag-outline tag-empty">
+                <van-icon name="add" size="10" />
+                无标签
+              </span>
+            </button>
           </div>
 
           <div class="artist-row">
@@ -107,6 +125,7 @@
 
 <script setup lang="ts">
 import type { Song } from '@/types/music'
+import type { SongTagItem } from '@/types/songTag'
 import { usePlaybackControl } from '@/composables/player/usePlaybackControl'
 import { useLyricSync, resolveLyricLines } from '@/composables/player/useLyricSync'
 import { useSongCarousel } from '@/composables/player/useSongCarousel'
@@ -115,14 +134,26 @@ import { Swiper, SwiperSlide } from 'swiper/vue'
 import 'swiper/css'
 import { ref, watch } from 'vue'
 
-const props = defineProps<{ favoriteSongs: Song[], shareCounts: Record<string, number>, commentCounts: Record<string, number> }>()
+const props = defineProps<{
+  favoriteSongs: Song[]
+  shareCounts: Record<string, number>
+  commentCounts: Record<string, number>
+  /** 歌曲 id -> 标签列表，仅当前歌曲展示 */
+  songTags: Record<string, SongTagItem[]>
+}>()
 
 const emit = defineEmits<{
   (e: 'favorite', id?: string | number): void
   (e: 'share', song: Song): void
   (e: 'openComment', song: Song): void
   (e: 'openQueue'): void
+  (e: 'openTags', song: Song): void
 }>()
+
+/** 标题旁最多展示 2 个标签，其余折叠为 +N */
+function visibleTags(song: Song): SongTagItem[] {
+  return (props.songTags[String(song.id)] || []).slice(0, 2)
+}
 
 const player = usePlayerStore()
 const { queueKey, initialSlide, onSwiperReady, onSlideChange } = useSongCarousel()
@@ -286,6 +317,24 @@ function onSliderDragEnd() {
       color: var(--theme-text, #fff);
       opacity: 0.9;
       background: rgba(128, 128, 128, 0.28);
+    }
+
+    .song-tags {
+      display: inline-flex;
+      align-items: center;
+      flex-shrink: 0;
+      gap: 6px;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      cursor: pointer;
+    }
+
+    .tag-empty {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      opacity: 0.75;
     }
   }
 

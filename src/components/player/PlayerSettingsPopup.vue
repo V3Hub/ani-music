@@ -60,6 +60,18 @@
                 <van-icon name="arrow" size="14" class="item-arrow" />
               </span>
             </li>
+            <li class="section-item" @click="emit('adminErrorLogs')">
+              <span class="item-label">错误日志</span>
+              <span class="item-value">
+                <van-icon name="arrow" size="14" class="item-arrow" />
+              </span>
+            </li>
+            <li class="section-item" @click="emit('adminSongTags')">
+              <span class="item-label">歌曲标签</span>
+              <span class="item-value">
+                <van-icon name="arrow" size="14" class="item-arrow" />
+              </span>
+            </li>
           </ul>
         </section>
 
@@ -177,6 +189,8 @@ const emit = defineEmits<{
   (e: 'switchAccount', userId: number): void
   (e: 'about'): void
   (e: 'adminReview'): void
+  (e: 'adminErrorLogs'): void
+  (e: 'adminSongTags'): void
 }>()
 
 /** 存在当前账号以外的历史账号时才展示切换入口 */

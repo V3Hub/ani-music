@@ -99,9 +99,22 @@ function attachLyrics<T extends { lrc?: string, lyricList?: LyricLine[] }>(list:
 
 // ==================== 推荐 ====================
 
-export async function getRecommendList(): Promise<Song[]> {
+/**
+ * 最热歌曲（听歌模式共用）
+ * @param mode 听歌模式 / 场景标识，后端按模式调整热度排序：
+ *   default 默认、familiar 熟悉、fresh 新鲜、library / emo / dj / sleep 场景
+ * @param excludeIds 需要排除的歌曲 id：一轮 30 首播完后换新批次，避免重复
+ */
+export async function getRecommendList(mode = 'default', excludeIds: Array<number | string> = []): Promise<Song[]> {
   try {
-    const data = await request.get<Song[]>('/api/recommend/hot')
+    const data = await request.get<Song[]>('/api/recommend/hot', {
+      // _t 绕过浏览器 / CDN 缓存，保证切换模式 / 换批次时拿到最新榜单
+      params: {
+        mode,
+        _t: Date.now(),
+        ...(excludeIds.length ? { exclude: excludeIds.join(',') } : {}),
+      },
+    })
     return attachLyrics(data || [])
   } catch (err) {
     console.warn('[music] getRecommendList 失败，使用示例数据', err)

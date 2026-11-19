@@ -31,8 +31,20 @@ export function getRegisterStatus(username?: string) {
 }
 
 /** 管理员：注册申请列表 */
-export function getAdminRegistrations(status: string = 'pending') {
-  return request.get<RegistrationItem[]>('/api/admin/registrations', { params: { status } })
+export interface AdminRegistrationQuery {
+  status?: string
+  keyword?: string
+  /** 起始日期（YYYY-MM-DD 或完整时间） */
+  from?: string
+  /** 结束日期（YYYY-MM-DD 或完整时间） */
+  to?: string
+}
+
+export function getAdminRegistrations(query: string | AdminRegistrationQuery = 'pending') {
+  const params = typeof query === 'string'
+    ? { status: query }
+    : { status: 'pending', ...query }
+  return request.get<RegistrationItem[]>('/api/admin/registrations', { params })
 }
 
 /** 管理员：审批通过 / 拒绝 */
@@ -68,6 +80,11 @@ export function getUserProfile() {
 /** 修改当前用户资料：用户名 / 昵称 / 头像（base64），未传的字段保持原值 */
 export function updateUserProfile(payload: { username?: string, nickname?: string, avatar?: string }) {
   return request.post<UserProfile>('/api/user/profile', payload)
+}
+
+/** 修改当前用户密码：需校验原密码 */
+export function changePassword(payload: { oldPassword: string, newPassword: string }) {
+  return request.post<null>('/api/user/password', payload)
 }
 
 export function ensureAutoToken(): Promise<string | null> {

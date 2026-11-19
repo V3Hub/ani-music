@@ -1,5 +1,6 @@
 import { resolve } from 'node:path'
 import process from 'node:process'
+import { readFileSync } from 'node:fs'
 import { VantResolver } from '@vant/auto-import-resolver'
 import vue from '@vitejs/plugin-vue'
 import UnoCSS from 'unocss/vite'
@@ -7,11 +8,20 @@ import Components from 'unplugin-vue-components/vite'
 import legacy from '@vitejs/plugin-legacy'
 import { defineConfig, loadEnv } from 'vite'
 
+/** 读取 package.json 版本号，构建时注入到前端 */
+const pkg = JSON.parse(readFileSync('package.json', 'utf-8'))
+const APP_VERSION = pkg.version
+const BUILD_TIME = new Date().toISOString().slice(0, 19).replace('T', ' ')
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const proxyTarget = env.VITE_API_PROXY_TARGET || 'http://localhost:3000'
 
   return {
+    define: {
+      __APP_VERSION__: JSON.stringify(APP_VERSION),
+      __BUILD_TIME__: JSON.stringify(BUILD_TIME),
+    },
     plugins: [
       UnoCSS(),
       vue(),

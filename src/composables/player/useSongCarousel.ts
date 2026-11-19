@@ -35,6 +35,8 @@ export function useSongCarousel() {
 
   /** 防止快速连滑重复触发 */
   let switchingLock = false
+  /** 上一次滑过的歌曲 id，loop 模式下会连续触发两次 slideChange，用它过滤 */
+  let lastSlidSongId: number | string | null = null
 
   function onSwiperReady(swiper: SwiperType) {
     swiperRef.value = swiper
@@ -60,13 +62,21 @@ export function useSongCarousel() {
     // 滑到的就是当前播放的歌：只同步高亮，不重复加载
     if (!target || target.id === currentSong.value?.id)
       return
+    // loop 模式下 realIndex 可能在过渡中重复触发同一首，跳过
+    if (target.id === lastSlidSongId)
+      return
+    lastSlidSongId = target.id
 
     switchingLock = true
     await playByIndex(targetIdx)
+    // 只在 Swiper 过渡动画（300ms）期间锁，避免锁死 error 自动切歌
     setTimeout(() => {
       switchingLock = false
     }, 350)
   }
+
+  /** syncToCurrent 的请求版本号：快速切歌时新请求覆盖旧的过渡动画 */
+  let syncVersion = 0
 
   /** 程序化切换到「当前播放歌曲」对应的 slide */
   function syncToCurrent(duration: number) {
@@ -74,11 +84,21 @@ export function useSongCarousel() {
     if (!swiper) return
     const idx = playList.value.findIndex((song: Song) => song.id === currentSong.value?.id)
     if (idx < 0) return
-    // 列表过短时 loop 被关闭，只能用普通 slideTo
+
+    const requestId = ++syncVersion
     if (swiper.params.loop)
       swiper.slideToLoop(idx, duration)
     else
       swiper.slideTo(idx, duration)
+
+    // 过渡完成后二次校验位置：防止过渡中又有新切歌导致封面停在旧 slide
+    setTimeout(() => {
+      if (requestId !== syncVersion) return
+      const curIdx = swiper.params.loop ? swiper.realIndex : swiper.activeIndex
+      if (curIdx !== idx) {
+        swiper.slideToLoop(idx, 0)
+      }
+    }, duration + 80)
   }
 
   /** 播放器切歌（下一首 / 上一首 / 自动播放）→ 轮播跟随 */

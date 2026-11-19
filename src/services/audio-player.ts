@@ -8,7 +8,7 @@ import type { Song } from '@/types/music'
  *  - 进度、时长、播放状态由 audio 事件驱动，避免定时器漂移
  *  - 组件只与 Pinia store 响应式引用绑定，不直接操作 audio
  */
-import { addSongToPlayRecord, demoteSongInPlaylist } from '@/api/music'
+import { addSongToPlayRecord, demoteSongInPlaylist, getRecommendList } from '@/api/music'
 import { reportSongDuration } from '@/services/song-meta-reporter'
 import { usePlayerStore } from '@/stores/player'
 import { watch } from 'vue'
@@ -100,10 +100,28 @@ function bindEvents() {
 /** 已写入播放历史的歌曲 id，避免同一首暂停/恢复时重复上报 */
 let lastRecordedSongId: number | string | null = null
 
+/** 各听歌模式本次会话已播放过的歌曲：一轮 30 首放完后换新批次时排除，避免重复 */
+const modePlayedIds = new Map<string, Set<number>>()
+/** 正在换批次：避免 ended 连续触发导致并发请求 */
+let switchingBatch = false
+
+/** 记录听歌模式下已播放的歌曲（切歌与手动选歌都会走到这里） */
+function recordModePlayed(songId: number | string) {
+  const source = playerStore.queueSource
+  if (source?.type !== 'mode')
+    return
+  const played = modePlayedIds.get(source.mode) || new Set<number>()
+  played.add(Number(songId))
+  modePlayedIds.set(source.mode, played)
+}
+
 /** 写入播放历史：真正开始播放时上报一次，失败静默并允许下次重试 */
 function recordPlayHistory() {
   const song = playerStore.currentSong
-  if (!song || song.id === lastRecordedSongId)
+  if (!song)
+    return
+  recordModePlayed(song.id)
+  if (song.id === lastRecordedSongId)
     return
   lastRecordedSongId = song.id
   addSongToPlayRecord(song.id).catch(() => {
@@ -126,11 +144,43 @@ function handleEnded() {
     audio.play().catch(() => {})
     return
   }
+
+  // 听歌模式：30 首放完自动换一批新的最热歌曲继续，而不是从头循环
+  const source = playerStore.queueSource
+  if (source?.type === 'mode' && playerStore.currentIndex >= playerStore.playList.length - 1) {
+    loadNextModeBatch(source.mode)
+    return
+  }
+
   // 列表顺序/随机：切到下一首
   const next = playerStore.nextIndex()
   if (next >= 0) {
     playerStore.setCurrentIndex(next)
     playCurrent().catch(() => {})
+  }
+}
+
+/**
+ * 一轮听歌模式播完：按当前模式重新拉取 30 首，排除本模式已播放过的歌曲；
+ * 候选太少时清空本模式播放记录，重新开始一轮，避免无歌可放
+ */
+async function loadNextModeBatch(mode: string) {
+  if (switchingBatch)
+    return
+  switchingBatch = true
+  const played = modePlayedIds.get(mode) || new Set<number>()
+  try {
+    let songs = await getRecommendList(mode, [...played])
+    if (songs.length < 5 && played.size) {
+      played.clear()
+      songs = await getRecommendList(mode)
+    }
+    if (!songs.length)
+      return
+    // 新批次从第一首开始播放，队列来源保持当前听歌模式
+    await play(songs[0], songs)
+  } finally {
+    switchingBatch = false
   }
 }
 
@@ -148,19 +198,18 @@ function autoNextOnError() {
   }
 
   const failedSong = playerStore.currentSong
-  const nextSong = playerStore.playList[playerStore.nextIndex()]
-  if (!failedSong || !nextSong)
+  const nextIdx = playerStore.nextIndex()
+  if (!failedSong || nextIdx < 0)
     return
 
-  // 歌单来源时同步把失败歌曲降到歌单末尾，后续打开歌单不会再靠前
+  // 歌单来源时同步把失败歌曲降到歌单末尾（后端排序）
   const source = playerStore.queueSource
   if (source?.type === 'playlist')
     demoteSongInPlaylist(failedSong.id, source.playlist.id)
 
-  // 本地队列同样移到末尾，再定位到原本的下一首
-  playerStore.moveSongToEnd(failedSong.id)
-  const nextIndex = playerStore.playList.findIndex(item => item.id === nextSong.id)
-  playerStore.setCurrentIndex(nextIndex >= 0 ? nextIndex : 0)
+  // 关键：**不重排 playList**，只移动 currentIndex
+  // 重排会触发 queueKey 变化导致 Swiper 重建，与 syncToCurrent 竞态造成封面/声音错位
+  playerStore.setCurrentIndex(nextIdx)
   playCurrent().catch(() => {})
 }
 

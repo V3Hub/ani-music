@@ -24,6 +24,53 @@
         </button>
       </div>
 
+      <div class="search-row">
+        <van-icon name="search" class="search-icon" />
+        <input
+          v-model="keyword"
+          class="search-input"
+          placeholder="搜索用户名 / 昵称 / 手机号 / 邮箱"
+          @keyup.enter="loadList"
+        >
+        <button
+          v-if="keyword"
+          type="button"
+          class="search-clear"
+          @click="clearKeyword"
+        >
+          <van-icon name="clear" />
+        </button>
+      </div>
+
+      <div class="date-row">
+        <button
+          v-for="item in DATE_RANGES"
+          :key="item.value"
+          type="button"
+          class="date-chip"
+          :class="{ active: dateRange === item.value }"
+          @click="changeDateRange(item.value)"
+        >
+          {{ item.label }}
+        </button>
+        <button
+          v-if="dateRange === 'custom'"
+          type="button"
+          class="date-chip custom"
+          @click="openDatePicker"
+        >
+          {{ customDateLabel || '选择日期' }}
+        </button>
+        <button
+          v-if="dateRange !== 'all'"
+          type="button"
+          class="date-reset"
+          @click="changeDateRange('all')"
+        >
+          <van-icon name="replay" />
+        </button>
+      </div>
+
       <van-loading v-if="loading" class="page-loading" color="#a78bfa" size="24" />
 
       <p v-else-if="!list.length" class="empty-tip">
@@ -107,6 +154,33 @@
 
     <van-image-preview v-model:show="previewVisible" :images="previewImages" />
 
+    <!-- 自定义日期范围选择器 -->
+    <van-popup v-model:show="datePickerVisible" position="bottom" round teleport="body" class="reject-popup">
+      <div class="reject-wrap">
+        <div class="reject-head">
+          <span>选择申请日期范围</span>
+          <button type="button" class="reject-cancel" @click="datePickerVisible = false">关闭</button>
+        </div>
+        <van-date-picker
+          v-model="customFromDate"
+          title="起始日期"
+          :min-date="minDate"
+          :max-date="maxDate"
+          @confirm="onCustomFromConfirm"
+        />
+        <van-date-picker
+          v-model="customToDate"
+          title="结束日期"
+          :min-date="customFromDate.length ? new Date(Number(customFromDate[0]), Number(customFromDate[1]) - 1, Number(customFromDate[2])) : minDate"
+          :max-date="maxDate"
+          @confirm="onCustomToConfirm"
+        />
+        <button type="button" class="confirm-reject" @click="applyCustomDate">
+          应用日期范围
+        </button>
+      </div>
+    </van-popup>
+
     <!-- VIP 调级 + 变更记录弹层 -->
     <van-popup v-model:show="vipVisible" position="bottom" round teleport="body" class="reject-popup">
       <div class="reject-wrap">
@@ -158,7 +232,7 @@ import { LOGIN_RETURN_OWNER_KEY } from '@/constants/auth'
 import { useUserProfileStore } from '@/stores/userProfile'
 import type { RegistrationItem, RegistrationStatus } from '@/types/user'
 import { showToast } from 'vant'
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 const STATUS_TABS = [
@@ -168,10 +242,33 @@ const STATUS_TABS = [
   { label: '全部', value: 'all' },
 ]
 
+const DATE_RANGES = [
+  { label: '全部', value: 'all' },
+  { label: '今天', value: 'today' },
+  { label: '近 7 天', value: '7d' },
+  { label: '近 30 天', value: '30d' },
+  { label: '自定义', value: 'custom' },
+]
+
 const router = useRouter()
 const profileStore = useUserProfileStore()
 
 const status = ref('pending')
+const keyword = ref('')
+const dateRange = ref('all')
+const customFrom = ref('')
+const customTo = ref('')
+const customDateLabel = computed(() => {
+  if (!customFrom.value || !customTo.value) return ''
+  return `${customFrom.value} ~ ${customTo.value}`
+})
+
+const datePickerVisible = ref(false)
+const customFromDate = ref<string[]>([])
+const customToDate = ref<string[]>([])
+const minDate = new Date(2020, 0, 1)
+const maxDate = new Date()
+
 const list = ref<RegistrationItem[]>([])
 const loading = ref(false)
 const actingId = ref<number | null>(null)
@@ -244,11 +341,44 @@ function statusLabel(value: RegistrationStatus) {
 /** 请求序号：切换筛选后只接受最后一次请求的结果，避免旧数据回填 */
 let loadSeq = 0
 
+/** 根据日期范围计算 from / to 参数（YYYY-MM-DD） */
+function resolveDateRange(): { from?: string; to?: string } {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const fmt = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  const now = new Date()
+  switch (dateRange.value) {
+    case 'today': {
+      const t = fmt(now)
+      return { from: t, to: t }
+    }
+    case '7d': {
+      const from = new Date(now.getTime() - 6 * 24 * 3600 * 1000)
+      return { from: fmt(from), to: fmt(now) }
+    }
+    case '30d': {
+      const from = new Date(now.getTime() - 29 * 24 * 3600 * 1000)
+      return { from: fmt(from), to: fmt(now) }
+    }
+    case 'custom':
+      return customFrom.value && customTo.value
+        ? { from: customFrom.value, to: customTo.value }
+        : {}
+    default:
+      return {}
+  }
+}
+
 async function loadList() {
   const seq = ++loadSeq
   loading.value = true
   try {
-    const data = await getAdminRegistrations(status.value)
+    const dateParams = resolveDateRange()
+    const data = await getAdminRegistrations({
+      status: status.value,
+      keyword: keyword.value.trim() || undefined,
+      from: dateParams.from,
+      to: dateParams.to,
+    })
     if (seq === loadSeq) list.value = data
   } catch {
     if (seq === loadSeq) list.value = []
@@ -260,7 +390,61 @@ async function loadList() {
 function changeStatus(value: string) {
   if (status.value === value) return
   status.value = value
-  // 切换筛选先清空，避免短暂显示上一个状态的列表
+  list.value = []
+  loadList()
+}
+
+function clearKeyword() {
+  keyword.value = ''
+  list.value = []
+  loadList()
+}
+
+function changeDateRange(value: string) {
+  if (dateRange.value === value) return
+  if (value === 'custom') {
+    openDatePicker()
+    return
+  }
+  customFrom.value = ''
+  customTo.value = ''
+  dateRange.value = value
+  list.value = []
+  loadList()
+}
+
+function openDatePicker() {
+  const today = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  customFromDate.value = [
+    String(today.getFullYear()),
+    pad(today.getMonth() + 1),
+    pad(today.getDate()),
+  ]
+  customToDate.value = [...customFromDate.value]
+  datePickerVisible.value = true
+}
+
+function onCustomFromConfirm({ selectedValues }: { selectedValues: string[] }) {
+  customFromDate.value = selectedValues
+}
+
+function onCustomToConfirm({ selectedValues }: { selectedValues: string[] }) {
+  customToDate.value = selectedValues
+}
+
+function applyCustomDate() {
+  const pad = (n: string | number) => String(n).padStart(2, '0')
+  const fmt = (arr: string[]) =>
+    `${arr[0]}-${pad(arr[1])}-${pad(arr[2])}`
+  if (customFromDate.value.length < 3 || customToDate.value.length < 3) {
+    showToast('请选择完整的日期')
+    return
+  }
+  customFrom.value = fmt(customFromDate.value)
+  customTo.value = fmt(customToDate.value)
+  datePickerVisible.value = false
+  dateRange.value = 'custom'
   list.value = []
   loadList()
 }
@@ -317,7 +501,10 @@ function formatTime(value: string) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
-onMounted(() => {
+onMounted(async () => {
+  // 直接刷新本页时用户资料尚未拉取，先取一次再判断管理员
+  if (!profileStore.isAdmin)
+    await profileStore.fetchProfile()
   // 非管理员直接退回（接口侧也会做 403 校验，双保险）
   if (!profileStore.isAdmin) {
     showToast('无管理员权限')
@@ -402,6 +589,93 @@ onMounted(() => {
 .page-loading {
   align-self: center;
   margin-top: 40px;
+}
+
+.search-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+
+  .search-icon {
+    flex-shrink: 0;
+    font-size: 14px;
+    color: rgba(255, 255, 255, 0.4);
+  }
+
+  .search-input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    outline: none;
+    background: transparent;
+    color: #fff;
+    font-size: 13px;
+
+    &::placeholder { color: rgba(255, 255, 255, 0.3); }
+  }
+
+  .search-clear {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 12px;
+    cursor: pointer;
+  }
+}
+
+.date-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+
+  .date-chip {
+    padding: 6px 14px;
+    border: 0;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 12px;
+    cursor: pointer;
+
+    &.active {
+      background: linear-gradient(135deg, #7c5cff, #a78bfa);
+      color: #fff;
+    }
+
+    &.custom {
+      max-width: 180px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+
+  .date-reset {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 12px;
+    cursor: pointer;
+    margin-left: auto;
+  }
 }
 
 .empty-tip {

@@ -5,12 +5,15 @@
  *  - 响应结构统一为 { code, message, data }，code === 0 视为成功
  *  - 请求自动携带 Bearer Token（来自 stores/user）
  *  - 401 清理登录态并回到开屏页重新自动登录，其余错误统一 toast 提示
+ *  - 服务端返回的错误（HTTP 异常状态 / 业务 code 非成功）自动上报错误日志，
+ *    断网 / 超时等用户自身网络问题不上报
  */
 import type { AxiosError, AxiosInstance, AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios'
 import axios from 'axios'
 import { showToast } from 'vant'
 import { useUserStore } from '@/stores/user'
 import type { ApiResponse } from '@/types/api'
+import { isNetworkError, reportApiError } from '@/utils/error-reporter'
 
 const SUCCESS_CODE = 200
 /** 记录上次重新登录的时间，用于防止自动登录失败时无限刷新 */
@@ -60,6 +63,20 @@ http.interceptors.response.use(
     const status = error.response?.status
     const message = error.response?.data?.msg || error.response?.data?.message
 
+    // 只上报服务端明确返回的错误；断网 / 超时 / 主动取消等自身网络问题不上报
+    // 放在清 token 之前调用，401 时仍能带上当前 token 关联用户
+    if (!isNetworkError(error)) {
+      reportApiError({
+        url: error.config?.url || '',
+        method: error.config?.method || 'GET',
+        httpStatus: status || 0,
+        bizCode: error.response?.data?.code ?? null,
+        message: message || error.message || '请求失败',
+        requestPayload: error.config?.params ?? error.config?.data,
+        responseBody: error.response?.data,
+      })
+    }
+
     if (error.code === 'ECONNABORTED') {
       showToast('请求超时，请检查网络')
     } else if (!status) {
@@ -81,11 +98,28 @@ http.interceptors.response.use(
   },
 )
 
-/** 解包后端统一响应结构 */
-async function unwrap<T>(request: Promise<{ data: ApiResponse<T> }>): Promise<T> {
-  const { data } = await request
+/** 请求元信息：业务错误上报时用于还原调用细节 */
+interface RequestMeta {
+  url: string
+  method: string
+  payload?: unknown
+}
+
+/** 解包后端统一响应结构，业务错误（code !== 成功码）上报后再抛出 */
+async function unwrap<T>(pending: Promise<{ data: ApiResponse<T> }>, meta: RequestMeta): Promise<T> {
+  const { data } = await pending
   if (data.code !== SUCCESS_CODE) {
     const message = data.msg || data.message || '请求失败'
+    // HTTP 状态正常但业务 code 失败，同样属于接口出错，需要上报
+    reportApiError({
+      url: meta.url,
+      method: meta.method,
+      httpStatus: 200,
+      bizCode: data.code,
+      message,
+      requestPayload: meta.payload,
+      responseBody: data,
+    })
     showToast(message)
     throw new Error(message)
   }
@@ -94,13 +128,13 @@ async function unwrap<T>(request: Promise<{ data: ApiResponse<T> }>): Promise<T>
 
 export const request = {
   get: <T>(url: string, config?: AxiosRequestConfig) =>
-    unwrap<T>(http.get<ApiResponse<T>>(url, config)),
+    unwrap<T>(http.get<ApiResponse<T>>(url, config), { url, method: 'GET', payload: config?.params }),
   post: <T>(url: string, payload?: unknown, config?: AxiosRequestConfig) =>
-    unwrap<T>(http.post<ApiResponse<T>>(url, payload, config)),
+    unwrap<T>(http.post<ApiResponse<T>>(url, payload, config), { url, method: 'POST', payload }),
   put: <T>(url: string, payload?: unknown, config?: AxiosRequestConfig) =>
-    unwrap<T>(http.put<ApiResponse<T>>(url, payload, config)),
+    unwrap<T>(http.put<ApiResponse<T>>(url, payload, config), { url, method: 'PUT', payload }),
   delete: <T>(url: string, config?: AxiosRequestConfig) =>
-    unwrap<T>(http.delete<ApiResponse<T>>(url, config)),
+    unwrap<T>(http.delete<ApiResponse<T>>(url, config), { url, method: 'DELETE', payload: config?.params }),
 }
 
 export default http

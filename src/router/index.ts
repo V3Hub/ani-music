@@ -41,6 +41,16 @@ const router = createRouter({
       component: () => import('@/views/AdminReviewView.vue'),
     },
     {
+      path: '/admin/error-logs',
+      name: 'adminErrorLogs',
+      component: () => import('@/views/AdminErrorLogView.vue'),
+    },
+    {
+      path: '/admin/song-tags',
+      name: 'adminSongTags',
+      component: () => import('@/views/AdminSongTagView.vue'),
+    },
+    {
       path: '/about',
       name: 'about',
       component: () => import('@/views/AboutView.vue'),

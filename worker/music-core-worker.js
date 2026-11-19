@@ -179,6 +179,8 @@ async function deleteUserCascade(DB, userId) {
     DB.prepare('DELETE FROM user_play_record WHERE user_id = ?').bind(id),
     DB.prepare('DELETE FROM user_favorite WHERE user_id = ?').bind(id),
     DB.prepare('DELETE FROM share_user WHERE user_id = ?').bind(id),
+    // 歌曲标签
+    DB.prepare('DELETE FROM song_tag WHERE user_id = ?').bind(id),
     // 歌单：先删歌单内歌曲与订阅，再删歌单
     DB.prepare('DELETE FROM playlist_song WHERE playlist_id IN (SELECT id FROM user_playlist WHERE user_id = ?)').bind(id),
     DB.prepare('DELETE FROM user_playlist_sub WHERE playlist_id IN (SELECT id FROM user_playlist WHERE user_id = ?)').bind(id),
@@ -217,12 +219,21 @@ const ROUTES = {
   '/api/user/auto': { POST: handleAutoLogin },
   '/api/user/login': { POST: handleUserLogin },
   '/api/user/profile': { GET: handleGetUserProfile, POST: handleUpdateUserProfile },
+  '/api/user/password': { POST: handleChangePassword },
   '/api/user/register': { POST: handleRegister },
   '/api/user/register/status': { GET: handleRegisterStatus },
   '/api/admin/registrations': { GET: handleAdminListRegistrations },
   '/api/admin/registration/review': { POST: handleAdminReviewRegistration },
   '/api/admin/user/vip-level': { POST: handleAdminSetVipLevel },
   '/api/admin/user/vip-records': { GET: handleAdminVipRecords },
+  '/api/error-log/report': { POST: handleReportErrorLog },
+  '/api/admin/error-logs': { GET: handleAdminListErrorLogs },
+  '/api/admin/error-log/status': { POST: handleAdminUpdateErrorLogStatus },
+  '/api/admin/error-log/delete': { POST: handleAdminDeleteErrorLog },
+  '/api/admin/error-log/clear': { POST: handleAdminClearErrorLogs },
+  '/api/admin/song-tags': { GET: handleAdminListSongTags },
+  '/api/admin/song-tag/delete': { POST: handleAdminDeleteSongTag },
+  '/api/admin/song-tag/delete-tag': { POST: handleAdminDeleteSongTagByName },
   '/api/song/add': { POST: handleUpsertSong },
   '/api/recommend/hot': { GET: handleGetHotList },
   '/api/playRecord/list': { GET: handleGetRecentPlay },
@@ -249,6 +260,9 @@ const ROUTES = {
   '/api/share/token': { GET: handleCreateShareToken },
   '/api/share/resolve': { GET: handleResolveShareToken },
   '/api/song/detail': { GET: handleGetSongDetail },
+  '/api/song/tags': { GET: handleGetHotSongTags },
+  '/api/song/tag': { GET: handleGetSongTags, POST: handleAddSongTag },
+  '/api/song/tag/delete': { POST: handleDeleteSongTag },
   '/api/song/share': { GET: handleGetSongShareCount, POST: handleReportSongShare },
   '/api/song/comment': { GET: handleGetComments, POST: handleAddComment },
   '/api/song/comment/count': { GET: handleGetCommentCount },
@@ -272,6 +286,8 @@ const PUBLIC_PATHS = new Set([
   '/api/user/register',
   '/api/user/register/status',
   '/api/song/stream',
+  // 错误上报：登录失效（401）时也要能记录，token 有则关联用户、无则匿名
+  '/api/error-log/report',
 ])
 
 /** 已确认存在的用户 id 缓存：userId → 校验时间戳（isolate 内存，5 分钟有效） */
@@ -377,6 +393,7 @@ export default {
             AND m.create_time >= DATETIME(DATE('now', '-30 day'))
         )
         AND NOT EXISTS (SELECT 1 FROM user_favorite f WHERE f.user_id = u.id)
+        AND NOT EXISTS (SELECT 1 FROM song_tag t WHERE t.user_id = u.id)
         AND NOT EXISTS (SELECT 1 FROM user_playlist pl WHERE pl.user_id = u.id)
         AND NOT EXISTS (SELECT 1 FROM user_playlist_sub s WHERE s.user_id = u.id)
       LIMIT 200
@@ -595,6 +612,36 @@ async function handleUpdateUserProfile(request, env) {
 }
 
 /**
+ * 修改密码 POST /api/user/password
+ * body: { oldPassword, newPassword }，需校验原密码，新密码至少 6 位
+ */
+async function handleChangePassword(request, env) {
+  const userId = getRequestUserId(request)
+  const body = await request.json().catch(() => ({}))
+  const oldPassword = String(body.oldPassword || '')
+  const newPassword = String(body.newPassword || '')
+  if (!oldPassword || !newPassword)
+    return jsonResp({ code: 400, msg: '请输入原密码和新密码' })
+  if (newPassword.length < 6 || newPassword.length > 64)
+    return jsonResp({ code: 400, msg: '新密码需 6-64 个字符' })
+  if (oldPassword === newPassword)
+    return jsonResp({ code: 400, msg: '新密码不能与原密码相同' })
+
+  const row = await env.DB.prepare('SELECT id, password FROM users WHERE id = ?').bind(userId).first()
+  if (!row?.id)
+    return jsonResp({ code: 401, msg: '账号不存在' }, 401)
+  if (!row.password)
+    return jsonResp({ code: 400, msg: '当前账号未设置密码，无法修改' })
+  const oldHashed = await sha256Hex(oldPassword + PASSWORD_SALT)
+  if (row.password !== oldHashed)
+    return jsonResp({ code: 400, msg: '原密码错误' })
+
+  const newHashed = await sha256Hex(newPassword + PASSWORD_SALT)
+  await env.DB.prepare('UPDATE users SET password = ? WHERE id = ?').bind(newHashed, userId).run()
+  return jsonResp({ code: 200, msg: '密码已修改', data: null })
+}
+
+/**
  * 会员注册申请 POST /api/user/register
  * 必填：用户名、昵称、密码、付款截图；选填：手机号、邮箱
  * 提交后进入 registration_request 待审批，管理员通过后才写入 users 生效
@@ -720,13 +767,38 @@ async function handleAdminListRegistrations(request, env) {
   if (!adminId)
     return jsonResp({ code: 403, msg: '无管理员权限' }, 403)
   const url = new URL(request.url)
-  const status = String(url.searchParams.get('status') || 'pending')
-  const where = status === 'all' ? '' : `WHERE status = '${status.replace(/[^a-z]/g, '')}'`
+  const statusParam = String(url.searchParams.get('status') || 'pending')
+  const keyword = String(url.searchParams.get('keyword') || '').trim()
+  const from = String(url.searchParams.get('from') || '').trim()
+  const to = String(url.searchParams.get('to') || '').trim()
+
+  const conditions = []
+  const binds = []
+  if (statusParam !== 'all') {
+    conditions.push(`status = ?`)
+    binds.push(statusParam.replace(/[^a-z]/g, ''))
+  }
+  if (keyword) {
+    const like = `%${keyword}%`
+    conditions.push(`(username LIKE ? OR nickname LIKE ? OR phone LIKE ? OR email LIKE ?)`)
+    binds.push(like, like, like, like)
+  }
+  if (from) {
+    conditions.push(`create_time >= ?`)
+    binds.push(from)
+  }
+  if (to) {
+    // 结束时间取当天 23:59:59 避免漏掉最后一天
+    const toEnd = to.length === 10 ? `${to} 23:59:59` : to
+    conditions.push(`create_time <= ?`)
+    binds.push(toEnd)
+  }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
   const { results } = await env.DB.prepare(
     `SELECT id, user_id, username, nickname, phone, email, payment_screenshot, status,
             reject_reason, create_time, review_time
-     FROM registration_request ${where} ORDER BY id DESC LIMIT 100`,
-  ).all()
+     FROM registration_request ${where} ORDER BY id DESC LIMIT 200`,
+  ).bind(...binds).all()
   return jsonResp({ code: 200, data: results || [] })
 }
 
@@ -847,6 +919,154 @@ async function handleAdminVipRecords(request, env) {
 }
 
 /**
+ * 用户端：上报接口错误 POST /api/error-log/report
+ * body: { url, method, httpStatus, bizCode?, message?, detail? }
+ * 前端已过滤断网 / 超时等用户自身网络问题，这里只负责落库
+ */
+async function handleReportErrorLog(request, env) {
+  const contentLength = Number(request.headers.get('content-length') || 0)
+  if (contentLength > 20000)
+    return jsonResp({ code: 413, msg: '上报内容过大' }, 413)
+  const body = await request.json().catch(() => null)
+  if (!body || typeof body !== 'object')
+    return jsonResp({ code: 400, msg: '参数错误' })
+  const url = String(body.url || '').slice(0, 500)
+  if (!url)
+    return jsonResp({ code: 400, msg: '缺少接口地址' })
+  const method = String(body.method || 'GET').toUpperCase().slice(0, 10)
+  const httpStatus = Number(body.httpStatus) || 0
+  const bizCode = Number.isFinite(Number(body.bizCode)) ? Number(body.bizCode) : null
+  const message = String(body.message || '').slice(0, 500)
+  const detail = typeof body.detail === 'string'
+    ? body.detail.slice(0, 6000)
+    : JSON.stringify(body.detail || {}).slice(0, 6000)
+
+  // 有 token 就关联用户；登录失效（401）时依旧允许匿名上报，避免日志丢失
+  const userId = await getUserIdFromToken(request)
+  let username = ''
+  if (userId) {
+    const row = await env.DB.prepare('SELECT username FROM users WHERE id = ?').bind(userId).first()
+    username = row?.username || ''
+  }
+
+  // 同一用户同一接口同一错误 1 分钟内只记一条，避免前端重试刷屏
+  const dup = await env.DB.prepare(
+    `SELECT id FROM error_log
+     WHERE url = ? AND method = ? AND message = ?
+       AND IFNULL(user_id, 0) = IFNULL(?, 0)
+       AND create_time >= DATETIME('now', '-1 minute')
+     LIMIT 1`,
+  ).bind(url, method, message, userId).first()
+  if (dup?.id)
+    return jsonResp({ code: 200, msg: '重复上报已忽略' })
+
+  await env.DB.prepare(
+    `INSERT INTO error_log (user_id, username, url, method, http_status, biz_code, message, detail, status, create_time)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'new', DATETIME('now'))`,
+  ).bind(userId, username, url, method, httpStatus, bizCode, message, detail).run()
+  return jsonResp({ code: 200, msg: '上报成功' })
+}
+
+/**
+ * 管理员：错误日志列表 GET /api/admin/error-logs
+ * 查询参数：status=all|new|resolved、keyword、from、to、page、pageSize
+ */
+async function handleAdminListErrorLogs(request, env) {
+  const adminId = await requireAdmin(request, env)
+  if (!adminId)
+    return jsonResp({ code: 403, msg: '无管理员权限' }, 403)
+  const url = new URL(request.url)
+  const statusParam = String(url.searchParams.get('status') || 'all')
+  const keyword = String(url.searchParams.get('keyword') || '').trim()
+  const from = String(url.searchParams.get('from') || '').trim()
+  const to = String(url.searchParams.get('to') || '').trim()
+  const page = Math.max(1, Number.parseInt(url.searchParams.get('page') || '1', 10) || 1)
+  const pageSize = Math.min(50, Math.max(10, Number.parseInt(url.searchParams.get('pageSize') || '20', 10) || 20))
+
+  const conditions = []
+  const binds = []
+  if (statusParam === 'new' || statusParam === 'resolved') {
+    conditions.push(`status = ?`)
+    binds.push(statusParam)
+  }
+  if (keyword) {
+    const like = `%${keyword}%`
+    conditions.push(`(url LIKE ? OR message LIKE ? OR username LIKE ? OR detail LIKE ?)`)
+    binds.push(like, like, like, like)
+  }
+  if (from) {
+    conditions.push(`create_time >= ?`)
+    binds.push(from)
+  }
+  if (to) {
+    // 结束时间取当天 23:59:59，避免漏掉最后一天
+    conditions.push(`create_time <= ?`)
+    binds.push(to.length === 10 ? `${to} 23:59:59` : to)
+  }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
+
+  const totalRow = await env.DB.prepare(`SELECT COUNT(*) AS total FROM error_log ${where}`).bind(...binds).first()
+  const { results } = await env.DB.prepare(
+    `SELECT id, user_id, username, url, method, http_status, biz_code, message, detail, status, create_time
+     FROM error_log ${where} ORDER BY id DESC LIMIT ? OFFSET ?`,
+  ).bind(...binds, pageSize, (page - 1) * pageSize).all()
+
+  return jsonResp({
+    code: 200,
+    data: {
+      list: results || [],
+      total: Number(totalRow?.total) || 0,
+      page,
+      pageSize,
+    },
+  })
+}
+
+/** 管理员：标记错误日志处理状态 POST /api/admin/error-log/status body: { id, status } */
+async function handleAdminUpdateErrorLogStatus(request, env) {
+  const adminId = await requireAdmin(request, env)
+  if (!adminId)
+    return jsonResp({ code: 403, msg: '无管理员权限' }, 403)
+  const body = await request.json().catch(() => ({}))
+  const id = Number(body.id)
+  const status = String(body.status || '')
+  if (!id || !['new', 'resolved'].includes(status))
+    return jsonResp({ code: 400, msg: '参数不完整' })
+  await env.DB.prepare('UPDATE error_log SET status = ? WHERE id = ?').bind(status, id).run()
+  return jsonResp({ code: 200, msg: status === 'resolved' ? '已标记为已处理' : '已标记为未处理' })
+}
+
+/** 管理员：删除单条错误日志 POST /api/admin/error-log/delete body: { id } */
+async function handleAdminDeleteErrorLog(request, env) {
+  const adminId = await requireAdmin(request, env)
+  if (!adminId)
+    return jsonResp({ code: 403, msg: '无管理员权限' }, 403)
+  const body = await request.json().catch(() => ({}))
+  const id = Number(body.id)
+  if (!id)
+    return jsonResp({ code: 400, msg: '缺少日志 id' })
+  await env.DB.prepare('DELETE FROM error_log WHERE id = ?').bind(id).run()
+  return jsonResp({ code: 200, msg: '已删除' })
+}
+
+/** 管理员：批量清除错误日志 POST /api/admin/error-log/clear body: { status: 'new' | 'resolved' | 'all' } */
+async function handleAdminClearErrorLogs(request, env) {
+  const adminId = await requireAdmin(request, env)
+  if (!adminId)
+    return jsonResp({ code: 403, msg: '无管理员权限' }, 403)
+  const body = await request.json().catch(() => ({}))
+  const status = String(body.status || 'resolved')
+  if (status === 'all') {
+    await env.DB.prepare('DELETE FROM error_log').run()
+    return jsonResp({ code: 200, msg: '已清除全部日志' })
+  }
+  if (status !== 'new' && status !== 'resolved')
+    return jsonResp({ code: 400, msg: '参数错误' })
+  await env.DB.prepare('DELETE FROM error_log WHERE status = ?').bind(status).run()
+  return jsonResp({ code: 200, msg: '已清除所选日志' })
+}
+
+/**
  * 添加 / 复用歌曲 POST /api/song/add
  * 以 source_song_id 去重；首次入库时回源音源接口补全封面、歌词、时长等元信息
  */
@@ -954,16 +1174,51 @@ async function handleUpsertSong(request, env) {
   return jsonResp({ code: 200, msg: '请求成功', data: mapSongRow(inserted) })
 }
 /**
- * 热门推荐 GET /api/recommend/hot
+ * 听歌模式排序策略：切换模式时前端会带着 mode 重新请求热门推荐，
+ * 这里按模式调整「最热歌曲」的打分，让榜单与听歌模式联动。
+ *  - default：默认热度榜，听过的歌降权
+ *  - familiar：熟悉模式，收藏 / 常听歌手加权，听过的歌不再降权
+ *  - fresh：新鲜模式，听过的歌重罚，新歌与新鲜度加权
+ *  - library / emo / dj / sleep：在热度基础上偏好对应曲风
+ */
+const HOT_MODE_PROFILES = {
+  default: { playedPenalty: 10, playedBonus: 0, affinityWeight: 2, freshWeight: 1, genres: [] },
+  familiar: { playedPenalty: 0, playedBonus: 8, affinityWeight: 3, freshWeight: 0.6, genres: [] },
+  fresh: { playedPenalty: 22, playedBonus: 0, affinityWeight: 1, freshWeight: 2.4, genres: [] },
+  library: { playedPenalty: 10, playedBonus: 0, affinityWeight: 2, freshWeight: 1, genres: ['acoustic', 'folk', 'piano', 'lofi', 'light', 'instrumental', 'jazz'] },
+  emo: { playedPenalty: 6, playedBonus: 2, affinityWeight: 2, freshWeight: 0.8, genres: ['ballad', 'sad', 'emo', 'r&b', 'rnb', 'love', 'soul'] },
+  dj: { playedPenalty: 8, playedBonus: 3, affinityWeight: 1.5, freshWeight: 0.8, genres: ['dance', 'electronic', 'edm', 'remix', 'house', 'dj', 'rap', 'hip-hop', 'hiphop'] },
+  sleep: { playedPenalty: 12, playedBonus: 0, affinityWeight: 1.5, freshWeight: 1.2, genres: ['ambient', 'sleep', 'piano', 'lofi', 'instrumental', 'light', 'acoustic'] },
+}
+
+/**
+ * 热门推荐 GET /api/recommend/hot?mode=xxx&exclude=1,2,3
  * 综合热度、偏好与新鲜度打分：
  *  - 热度：日榜权重高于周榜，避免旧热歌长期占位
  *  - 偏好：收藏过的歌手 > 常听歌手，收藏过的歌曲小幅加权
  *  - 去重：听过的歌降权，同一歌手最多两首
  *  - 兜底：热度为 0 的新歌按 id 新鲜度加分，保证冷启动也有内容
+ *  - 模式：mode 决定降权 / 曲风偏好策略，切换模式即刷新为对应榜单
+ *  - 换批：exclude 传入已播放的歌曲 id，30 首放完后取下一批不重复的歌
  */
 async function handleGetHotList(request, env) {
   const DB = env.DB
   const userId = getRequestUserId(request)
+  const url = new URL(request.url)
+  const rawMode = String(url.searchParams.get('mode') || 'default')
+  // 标签模式：mode=tag:标签名，大小写敏感，不能整体转小写
+  const tagFilter = rawMode.startsWith('tag:') ? rawMode.slice(4).trim() : ''
+  const mode = tagFilter ? 'default' : rawMode.toLowerCase()
+  const profile = HOT_MODE_PROFILES[mode] || HOT_MODE_PROFILES.default
+  // 稳定模式扰动种子：保证同一批热歌在不同模式下排序有差异，且结果可复现
+  const seedText = tagFilter || mode
+  const modeSeed = [...seedText].reduce((sum, char) => sum + char.charCodeAt(0), 0)
+  const excludeIds = new Set(
+    String(url.searchParams.get('exclude') || '')
+      .split(',')
+      .map(id => Number(id))
+      .filter(id => Number.isFinite(id) && id > 0),
+  )
 
   // 候选池：全部歌曲带上近 7 天实时热度，最多取 300 首参与排序
   const { results } = await DB.prepare(
@@ -983,12 +1238,16 @@ async function handleGetHotList(request, env) {
       WHERE create_time >= DATETIME(DATE('now', '-6 day'))
       GROUP BY song_id
     ) h ON h.song_id = s.id
+    WHERE (? = '' OR EXISTS (
+      SELECT 1 FROM song_tag t WHERE t.song_id = s.id AND t.tag = ?
+    ))
     ORDER BY (COALESCE(h.day_plays, 0) * 3 + COALESCE(h.week_plays, 0)) DESC,
              s.id DESC
     LIMIT 300
   `,
-  ).all()
-  const rows = results || []
+  ).bind(tagFilter, tagFilter).all()
+  // 换批次：排除已播放过的歌曲，保证下一批不重复
+  const rows = (results || []).filter(row => !excludeIds.has(Number(row.id)))
   if (!rows.length)
     return jsonResp({ code: 200, msg: '请求成功', data: [] })
 
@@ -1035,11 +1294,18 @@ async function handleGetHotList(request, env) {
     const week = Number(row.week_plays) || 0
     // 新鲜度：越新加分越高，最多 12 分，帮助零播放的新歌进入榜单
     const freshness = (Number(row.id) / maxId) * 12
-    const affinity = row.artist ? (artistWeight.get(row.artist) || 0) * 2 : 0
+    const affinity = row.artist ? (artistWeight.get(row.artist) || 0) * profile.affinityWeight : 0
     const favoriteBonus = favoriteIds.has(row.id) ? 6 : 0
-    // 已经听过的歌降权而不是直接剔除，保留复听可能
-    const playedPenalty = playedIds.has(row.id) ? 10 : 0
-    const score = day * 3 + week + freshness + affinity + favoriteBonus - playedPenalty
+    // 已经听过的歌按模式降权 / 加权：熟悉模式反而不降权，新鲜模式重罚
+    const played = playedIds.has(row.id)
+    const playedPenalty = played ? profile.playedPenalty : 0
+    const playedBonus = played ? profile.playedBonus : 0
+    // 场景模式偏好对应曲风：命中标签的歌曲额外加权
+    const genreText = String(row.genre || '').toLowerCase()
+    const genreBoost = profile.genres.some(genre => genreText.includes(genre)) ? 15 : 0
+    // 模式扰动：同一批热歌在不同模式下顺序不同，切换模式后榜单不会完全一样
+    const jitter = ((Number(row.id) * 31 + modeSeed * 17) % 23) / 23 * 3
+    const score = day * 3 + week + freshness * profile.freshWeight + affinity + favoriteBonus - playedPenalty + playedBonus + genreBoost + jitter
     return { row, score }
   })
 
@@ -2057,6 +2323,163 @@ async function handleGetSongDetail(request, env) {
     return jsonResp({ code: 404, msg: '歌曲不存在' })
   }
   return jsonResp({ code: 200, msg: '请求成功', data: mapSongRow(results, { withLyric: true, withFavorite: true }) })
+}
+
+/** 规范化标签文本：压缩空白并限制长度，非法时返回空串 */
+function normalizeTag(raw) {
+  const tag = String(raw || '').replace(/\s+/g, ' ').trim()
+  if (!tag || tag.length > 12) return ''
+  return tag
+}
+
+/** 热门标签 GET /api/song/tags?limit=12 —— 听歌模式据此生成标签模式 */
+async function handleGetHotSongTags(request, env) {
+  const url = new URL(request.url)
+  const limit = Math.min(30, Math.max(1, Number.parseInt(url.searchParams.get('limit') || '12', 10) || 12))
+  const { results } = await env.DB.prepare(
+    `SELECT tag, COUNT(*) AS count
+     FROM song_tag
+     GROUP BY tag
+     ORDER BY count DESC, tag ASC
+     LIMIT ?`,
+  ).bind(limit).all()
+  const data = (results || []).map(row => ({ tag: row.tag, count: Number(row.count) || 0 }))
+  return jsonResp({ code: 200, msg: '请求成功', data })
+}
+
+/**
+ * 歌曲标签列表 GET /api/song/tag?songId=xx
+ * 返回该歌曲全部标签及使用人数，并标出当前用户是否已打该标签
+ */
+async function handleGetSongTags(request, env) {
+  const userId = getRequestUserId(request)
+  const url = new URL(request.url)
+  const songId = Number(url.searchParams.get('songId') || url.searchParams.get('id'))
+  if (!songId) return jsonResp({ code: 400, msg: 'songId不能为空' })
+
+  const { results } = await env.DB.prepare(
+    `SELECT tag,
+            COUNT(*) AS count,
+            SUM(CASE WHEN user_id = ? THEN 1 ELSE 0 END) AS mine
+     FROM song_tag
+     WHERE song_id = ?
+     GROUP BY tag
+     ORDER BY count DESC, tag ASC
+     LIMIT 50`,
+  ).bind(userId, songId).all()
+
+  const data = (results || []).map(row => ({
+    tag: row.tag,
+    count: Number(row.count) || 0,
+    mine: Number(row.mine) > 0,
+  }))
+  return jsonResp({ code: 200, msg: '请求成功', data })
+}
+
+/** 给歌曲打标签 POST /api/song/tag body: { songId, tag } */
+async function handleAddSongTag(request, env) {
+  const userId = getRequestUserId(request)
+  const body = await request.json().catch(() => ({}))
+  const songId = Number(body.songId)
+  const tag = normalizeTag(body.tag)
+  if (!songId) return jsonResp({ code: 400, msg: 'songId不能为空' })
+  if (!tag) return jsonResp({ code: 400, msg: '标签需为 1-12 个字符' })
+
+  const song = await env.DB.prepare('SELECT id FROM songs WHERE id = ?').bind(songId).first()
+  if (!song) return jsonResp({ code: 404, msg: '歌曲不存在' })
+
+  const exist = await env.DB.prepare(
+    'SELECT id FROM song_tag WHERE song_id = ? AND tag = ? AND user_id = ?',
+  ).bind(songId, tag, userId).first()
+  if (!exist) {
+    await env.DB.prepare(
+      `INSERT INTO song_tag (song_id, tag, user_id, create_time) VALUES (?, ?, ?, DATETIME('now'))`,
+    ).bind(songId, tag, userId).run()
+  }
+  return jsonResp({ code: 200, msg: exist ? '已添加过该标签' : '已添加标签' })
+}
+
+/** 取消自己的歌曲标签 POST /api/song/tag/delete body: { songId, tag } */
+async function handleDeleteSongTag(request, env) {
+  const userId = getRequestUserId(request)
+  const body = await request.json().catch(() => ({}))
+  const songId = Number(body.songId)
+  const tag = normalizeTag(body.tag)
+  if (!songId || !tag) return jsonResp({ code: 400, msg: '参数不完整' })
+
+  const result = await env.DB.prepare(
+    'DELETE FROM song_tag WHERE song_id = ? AND tag = ? AND user_id = ?',
+  ).bind(songId, tag, userId).run()
+  return jsonResp({ code: 200, msg: '已移除标签', data: { count: result.meta?.changes || 0 } })
+}
+
+/**
+ * 管理员：标签列表 GET /api/admin/song-tags?keyword=&page=&pageSize
+ * keyword 同时匹配标签、歌曲名、歌手与用户名
+ */
+async function handleAdminListSongTags(request, env) {
+  const adminId = await requireAdmin(request, env)
+  if (!adminId)
+    return jsonResp({ code: 403, msg: '无管理员权限' }, 403)
+
+  const url = new URL(request.url)
+  const keyword = String(url.searchParams.get('keyword') || '').trim()
+  const page = Math.max(1, Number.parseInt(url.searchParams.get('page') || '1', 10) || 1)
+  const pageSize = Math.min(50, Math.max(10, Number.parseInt(url.searchParams.get('pageSize') || '20', 10) || 20))
+
+  const conditions = []
+  const binds = []
+  if (keyword) {
+    const like = `%${keyword}%`
+    conditions.push(`(t.tag LIKE ? OR s.title LIKE ? OR s.artist LIKE ? OR u.username LIKE ?)`)
+    binds.push(like, like, like, like)
+  }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
+  const from = `FROM song_tag t
+    LEFT JOIN songs s ON s.id = t.song_id
+    LEFT JOIN users u ON u.id = t.user_id`
+
+  const totalRow = await env.DB.prepare(`SELECT COUNT(*) AS total ${from} ${where}`).bind(...binds).first()
+  const { results } = await env.DB.prepare(
+    `SELECT t.id, t.song_id, t.tag, t.user_id, t.create_time,
+            s.title, s.artist, s.cover_url, u.username
+     ${from} ${where}
+     ORDER BY t.id DESC LIMIT ? OFFSET ?`,
+  ).bind(...binds, pageSize, (page - 1) * pageSize).all()
+
+  return jsonResp({
+    code: 200,
+    data: {
+      list: results || [],
+      total: Number(totalRow?.total) || 0,
+      page,
+      pageSize,
+    },
+  })
+}
+
+/** 管理员：删除单条标签 POST /api/admin/song-tag/delete body: { id } */
+async function handleAdminDeleteSongTag(request, env) {
+  const adminId = await requireAdmin(request, env)
+  if (!adminId)
+    return jsonResp({ code: 403, msg: '无管理员权限' }, 403)
+  const body = await request.json().catch(() => ({}))
+  const id = Number(body.id)
+  if (!id) return jsonResp({ code: 400, msg: '参数不完整' })
+  await env.DB.prepare('DELETE FROM song_tag WHERE id = ?').bind(id).run()
+  return jsonResp({ code: 200, msg: '已删除' })
+}
+
+/** 管理员：删除某个标签名的全部记录 POST /api/admin/song-tag/delete-tag body: { tag } */
+async function handleAdminDeleteSongTagByName(request, env) {
+  const adminId = await requireAdmin(request, env)
+  if (!adminId)
+    return jsonResp({ code: 403, msg: '无管理员权限' }, 403)
+  const body = await request.json().catch(() => ({}))
+  const tag = normalizeTag(body.tag)
+  if (!tag) return jsonResp({ code: 400, msg: '标签不能为空' })
+  const result = await env.DB.prepare('DELETE FROM song_tag WHERE tag = ?').bind(tag).run()
+  return jsonResp({ code: 200, msg: '已删除该标签', data: { count: result.meta?.changes || 0 } })
 }
 
 /** 主题色结果缓存（Workers isolate 级别，避免重复下载解码封面） */
