@@ -34,8 +34,8 @@
           </ul>
         </section>
 
-        <!-- 账号 -->
-        <section v-if="loggedIn" class="settings-section">
+        <!-- 账号：退出登录后仍保留历史账号，可在这里切换或删除 -->
+        <section v-if="loggedIn || hasAccounts" class="settings-section">
           <div class="section-title">账号</div>
           <ul class="section-list">
             <li v-if="hasSwitchable" class="section-item" @click="switchVisible = true">
@@ -44,7 +44,7 @@
                 <van-icon name="arrow" size="14" class="item-arrow" />
               </span>
             </li>
-            <li class="section-item" @click="emit('logout')">
+            <li v-if="loggedIn" class="section-item" @click="emit('logout')">
               <span class="item-label item-danger">退出登录</span>
             </li>
           </ul>
@@ -79,6 +79,13 @@
         <section class="settings-section">
           <div class="section-title">其他</div>
           <ul class="section-list">
+            <li v-if="mobilePlatform !== 'other'" class="section-item" @click="onDownloadApp">
+              <span class="item-label">下载轻量版 App</span>
+              <span class="item-value">
+                {{ mobilePlatform === 'ios' ? '描述文件' : '添加到主屏幕' }}
+                <van-icon name="down" size="14" class="item-arrow" />
+              </span>
+            </li>
             <li class="section-item" @click="emit('about')">
               <span class="item-label">关于</span>
               <span class="item-value">
@@ -129,6 +136,9 @@
             </div>
             <span v-if="acc.userId === currentUserId" class="switch-tag">当前</span>
             <van-icon v-else name="arrow" class="switch-arrow" />
+            <button type="button" class="switch-del" @click.stop="onRemoveAccount(acc)">
+              <van-icon name="delete-o" size="16" />
+            </button>
           </li>
         </ul>
         <p v-if="!accounts.length" class="switch-empty">
@@ -163,7 +173,9 @@ import type { PlaybackSourceOption } from '@/constants/player-ui'
 import type { SavedAccount } from '@/types/user'
 import { SLEEP_OPTIONS } from '@/composables/player/usePlaybackSource'
 import { useSwipeClose } from '@/composables/useSwipeClose'
-import { resolveAvatar } from '@/utils/avatar'
+import { resolveAvatarOrDefault } from '@/utils/avatar'
+import { detectMobilePlatform, downloadWebClipProfile } from '@/utils/lite-app'
+import { showConfirmDialog, showToast } from 'vant'
 import { computed, ref } from 'vue'
 
 const props = defineProps<{
@@ -187,14 +199,30 @@ const emit = defineEmits<{
   (e: 'setSleepTimer', minutes: number): void
   (e: 'logout'): void
   (e: 'switchAccount', userId: number): void
+  (e: 'removeAccount', userId: number): void
   (e: 'about'): void
   (e: 'adminReview'): void
   (e: 'adminErrorLogs'): void
   (e: 'adminSongTags'): void
 }>()
 
-/** 存在当前账号以外的历史账号时才展示切换入口 */
+/** 存在历史账号时才展示账号分组 */
+const hasAccounts = computed(() => props.accounts.length > 0)
+/** 仅有一个当前账号时不展示「切换账号」 */
 const hasSwitchable = computed(() => props.accounts.some(a => a.userId !== props.currentUserId))
+
+/** 设备平台：手机端才提供轻量版 App 入口 */
+const mobilePlatform = detectMobilePlatform()
+
+/** 轻量版 App：iOS 下载描述文件安装桌面图标；Android 引导添加到主屏幕 */
+async function onDownloadApp() {
+  if (mobilePlatform === 'android') {
+    showToast('请在浏览器菜单中选择「添加到主屏幕」')
+    return
+  }
+  await downloadWebClipProfile()
+  showToast('描述文件已下载，请到「设置」中安装')
+}
 
 const visible = defineModel<boolean>('visible', { required: true })
 const pickerVisible = defineModel<boolean>('pickerVisible', { required: true })
@@ -215,10 +243,7 @@ function onClosed() {
 
 /** 历史账号头像：无自定义头像时按用户名生成 */
 function accountAvatar(account: SavedAccount) {
-  return resolveAvatar(
-    account.avatar,
-    `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(account.username || String(account.userId))}`,
-  )
+  return resolveAvatarOrDefault(account.avatar, account.username || String(account.userId))
 }
 
 function onSwitchAccount(account: SavedAccount) {
@@ -226,6 +251,22 @@ function onSwitchAccount(account: SavedAccount) {
     return
   switchVisible.value = false
   emit('switchAccount', account.userId)
+}
+
+/** 删除历史账号：仅移除本地记录，当前登录状态不受影响 */
+async function onRemoveAccount(account: SavedAccount) {
+  const label = account.nickname || account.username
+  try {
+    await showConfirmDialog({
+      title: '删除账号',
+      message: `删除后将不再保留「${label}」的登录记录`,
+      confirmButtonText: '删除',
+      confirmButtonColor: '#ee4d38',
+    })
+  } catch {
+    return
+  }
+  emit('removeAccount', account.userId)
 }
 
 function openSourcePicker() {
@@ -465,6 +506,22 @@ function onPickSleep(minutes: number) {
   flex-shrink: 0;
   font-size: 14px;
   opacity: 0.4;
+}
+
+.switch-del {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border: 0;
+  background: transparent;
+  color: rgba(238, 77, 56, 0.85);
+  cursor: pointer;
+}
+
+.switch-del:active {
+  opacity: 0.6;
 }
 
 .switch-empty {

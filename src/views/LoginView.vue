@@ -97,7 +97,7 @@ import { LOGIN_RETURN_OWNER_KEY } from '@/constants/auth'
 import { useUserStore } from '@/stores/user'
 import { useUserProfileStore } from '@/stores/userProfile'
 import type { LoginCandidate } from '@/types/user'
-import { resolveAvatar } from '@/utils/avatar'
+import { resolveAvatarOrDefault } from '@/utils/avatar'
 import { showToast } from 'vant'
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -117,10 +117,7 @@ const candidates = ref<LoginCandidate[]>([])
 const chooseVisible = ref(false)
 
 function candidateAvatar(item: LoginCandidate) {
-  return resolveAvatar(
-    item.avatar,
-    `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(item.username || String(item.id))}`,
-  )
+  return resolveAvatarOrDefault(item.avatar, item.username || String(item.id))
 }
 
 /** 登录：写入 token 与资料后回到首页，「我的」页在挂载时读取标记自动切回 */

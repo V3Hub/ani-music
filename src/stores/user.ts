@@ -95,12 +95,6 @@ export const useUserStore = defineStore('user', () => {
     writeAccounts(savedAccounts.value)
   }
 
-  /** 清空历史账号：退出登录后不再保留可切换的账号 */
-  function clearAccounts() {
-    savedAccounts.value = []
-    writeAccounts([])
-  }
-
   /** 一键切换到历史账号：返回该账号资料供 profile store 使用 */
   function switchAccount(userId: number): SavedAccount | null {
     const target = savedAccounts.value.find(a => a.userId === userId)
@@ -122,7 +116,6 @@ export const useUserStore = defineStore('user', () => {
     getToken,
     saveAccount,
     removeAccount,
-    clearAccounts,
     switchAccount,
   }
 })

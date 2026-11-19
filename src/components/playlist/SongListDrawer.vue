@@ -101,7 +101,8 @@ import VipBadge from '@/components/common/VipBadge.vue'
 import WaveBox from '@/components/waveBox/WaveBox.vue'
 import { getPlaylistShareCount } from '@/api/music'
 import { sharePlaylist } from '@/utils/share'
-import { resolveAvatar } from '@/utils/avatar'
+import { resolveAvatarOrDefault } from '@/utils/avatar'
+import { resolveDisplayName } from '@/utils/user-token'
 import { useSwipeClose } from '@/composables/useSwipeClose'
 import { computed, ref, watch } from 'vue'
 
@@ -130,11 +131,14 @@ const playlistShareCount = ref(0)
 const LOGO_URL = '/qs.svg'
 
 /** 作者展示名：真实昵称优先，其次 userToken，最后 guest */
-const authorName = computed(() => props.activePlaylist?.nickname || props.activePlaylist?.userToken || 'guest')
+const authorName = computed(() => resolveDisplayName({
+  nickname: props.activePlaylist?.nickname,
+  userToken: props.activePlaylist?.userToken,
+}))
 /** 作者头像：数据库头像优先，没有则按 userToken 生成默认头像 */
-const authorAvatar = computed(() => resolveAvatar(
+const authorAvatar = computed(() => resolveAvatarOrDefault(
   props.activePlaylist?.avatar,
-  `https://api.dicebear.com/7.x/avataaars/svg?seed=${props.activePlaylist?.userToken ?? 'guest'}`,
+  props.activePlaylist?.userToken,
 ))
 
 watch(() => props.activePlaylist?.id, (id) => {

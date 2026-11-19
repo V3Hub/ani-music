@@ -152,7 +152,8 @@ import VipBadge from '@/components/common/VipBadge.vue'
 import { LOGIN_RETURN_OWNER_KEY } from '@/constants/auth'
 import { useUserProfileStore } from '@/stores/userProfile'
 import { useUserStore } from '@/stores/user'
-import { resolveAvatar } from '@/utils/avatar'
+import { resolveAvatarOrDefault } from '@/utils/avatar'
+import { resolveDisplayName } from '@/utils/user-token'
 import { compressImageFile } from '@/utils/image'
 import { showToast } from 'vant'
 import { computed, onMounted, ref } from 'vue'
@@ -162,10 +163,14 @@ const router = useRouter()
 const userStore = useUserStore()
 const profileStore = useUserProfileStore()
 
-const displayName = computed(() => profileStore.nickname || profileStore.username || '游客')
-const avatarSrc = computed(() => resolveAvatar(
+const displayName = computed(() => resolveDisplayName({
+  nickname: profileStore.nickname,
+  username: profileStore.username,
+  userId: profileStore.id,
+}))
+const avatarSrc = computed(() => resolveAvatarOrDefault(
   profileStore.avatar,
-  `https://api.dicebear.com/7.x/avataaars/svg?seed=${profileStore.username || profileStore.id || 'guest'}`,
+  profileStore.username || profileStore.id,
 ))
 const vipText = computed(() => (
   profileStore.vipLevel > 0 ? `永久 VIP${profileStore.vipLevel}` : '普通用户'

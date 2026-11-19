@@ -26,6 +26,7 @@ declare module 'vue' {
     SongListDrawer: typeof import('./src/components/playlist/SongListDrawer.vue')['default']
     SongSearchPopup: typeof import('./src/components/player/SongSearchPopup.vue')['default']
     SongTagPopup: typeof import('./src/components/playlist/SongTagPopup.vue')['default']
+    VanBadge: typeof import('vant/es')['Badge']
     VanDatePicker: typeof import('vant/es')['DatePicker']
     VanEmpty: typeof import('vant/es')['Empty']
     VanIcon: typeof import('vant/es')['Icon']

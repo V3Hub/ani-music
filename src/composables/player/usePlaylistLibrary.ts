@@ -16,14 +16,12 @@ import {
   removeSongFromPlayRecord,
 } from '@/api/music'
 import { PlaylistSource } from '@/constants/playlist'
-import { toUserToken } from '@/composables/player/usePlaylistDiscovery'
+import { GUEST_USER_TOKEN, toUserToken } from '@/utils/user-token'
 import { useUserProfileStore } from '@/stores/userProfile'
 import { useUserStore } from '@/stores/user'
 import { showToast } from 'vant'
 import type { Ref } from 'vue'
 import { computed, ref } from 'vue'
-
-export const GUEST_USER_TOKEN = 'guest'
 
 export function usePlaylistLibrary({ favoriteSongs }: { favoriteSongs: Ref<Song[]> }) {
   const userStore = useUserStore()

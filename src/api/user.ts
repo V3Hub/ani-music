@@ -87,6 +87,30 @@ export function changePassword(payload: { oldPassword: string, newPassword: stri
   return request.post<null>('/api/user/password', payload)
 }
 
+/** 他人公开资料（不含手机号 / 邮箱等隐私信息） */
+export interface PublicUserProfile {
+  id: number
+  nickname: string
+  avatar: string
+  vipLevel: number
+  isAdmin: boolean
+  /** 是否是当前登录用户自己 */
+  mine: boolean
+  commentCount: number
+  wishCount: number
+  playlistCount: number
+}
+
+/** 查看其他用户公开资料 */
+export function getPublicUserProfile(id: string | number) {
+  return request.get<PublicUserProfile>('/api/user/public-profile', { params: { id } })
+}
+
+/** 给其他用户留言（写入对方的站内通知） */
+export function sendUserMessage(userId: string | number, content: string) {
+  return request.post<null>('/api/user/message', { userId, content })
+}
+
 export function ensureAutoToken(): Promise<string | null> {
   const userStore = useUserStore()
 

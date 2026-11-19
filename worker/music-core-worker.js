@@ -174,6 +174,11 @@ async function trimOldestIfFull(DB, table, userId, total) {
 async function deleteUserCascade(DB, userId) {
   const id = Number(userId) || 0
   const text = String(userId)
+  // 先清掉该用户收到 / 发出的站内通知
+  await clearNotifications(DB, {
+    sql: 'DELETE FROM user_notification WHERE user_id IN (?, ?) OR sender_id IN (?, ?)',
+    params: [id, text, id, text],
+  })
   await DB.batch([
     // 播放记录、收藏、分享
     DB.prepare('DELETE FROM user_play_record WHERE user_id = ?').bind(id),
@@ -219,6 +224,8 @@ const ROUTES = {
   '/api/user/auto': { POST: handleAutoLogin },
   '/api/user/login': { POST: handleUserLogin },
   '/api/user/profile': { GET: handleGetUserProfile, POST: handleUpdateUserProfile },
+  '/api/user/public-profile': { GET: handleGetPublicUserProfile },
+  '/api/user/message': { POST: handleSendUserMessage },
   '/api/user/password': { POST: handleChangePassword },
   '/api/user/register': { POST: handleRegister },
   '/api/user/register/status': { GET: handleRegisterStatus },
@@ -274,6 +281,9 @@ const ROUTES = {
   '/api/wish/messages': { GET: handleGetWishMessages },
   '/api/wish/message/add': { POST: handleAddWishMessage },
   '/api/wish/delete': { POST: handleDeleteWish },
+  '/api/notification/list': { GET: handleListNotifications },
+  '/api/notification/unread': { GET: handleNotificationUnreadCount },
+  '/api/notification/read': { POST: handleMarkNotificationsRead },
   '/api/playlist/share': { GET: handleGetPlaylistShareCount, POST: handleReportPlaylistShare },
   '/api/song/theme-color': { GET: handleGetSongThemeColor },
   '/api/song/meta': { POST: handleUpdateSongMeta },
@@ -609,6 +619,79 @@ async function handleUpdateUserProfile(request, env) {
     msg: '已保存',
     data: mapUserProfile({ ...row, username, nickname, avatar_url: avatar }),
   })
+}
+
+/**
+ * 他人公开资料 GET /api/user/public-profile?id=xx
+ * 只返回可公开的信息与互动统计，不包含手机号 / 邮箱 / 密码
+ */
+async function handleGetPublicUserProfile(request, env) {
+  const currentUserId = getRequestUserId(request)
+  const targetId = Number(new URL(request.url).searchParams.get('id'))
+  if (!targetId)
+    return jsonResp({ code: 400, msg: '参数错误' })
+
+  const row = await env.DB.prepare(
+    'SELECT id, nickname, avatar_url, vip_level, is_admin FROM users WHERE id = ?',
+  )
+    .bind(targetId)
+    .first()
+  if (!row?.id)
+    return jsonResp({ code: 404, msg: '用户不存在' }, 404)
+
+  // 评论 / 心愿的 user_id 以文本存储，歌单为数字
+  const [commentRow, wishRow, playlistRow] = await Promise.all([
+    env.DB.prepare('SELECT COUNT(*) AS count FROM song_comment WHERE user_id = ?').bind(String(targetId)).first(),
+    env.DB.prepare('SELECT COUNT(*) AS count FROM wish WHERE user_id = ?').bind(String(targetId)).first(),
+    env.DB.prepare('SELECT COUNT(*) AS count FROM user_playlist WHERE user_id = ?').bind(targetId).first(),
+  ])
+
+  return jsonResp({
+    code: 200,
+    msg: '获取成功',
+    data: {
+      id: row.id,
+      nickname: row.nickname || '',
+      avatar: row.avatar_url || '',
+      vipLevel: Number(row.vip_level) || 0,
+      isAdmin: !!row.is_admin,
+      mine: row.id === currentUserId,
+      commentCount: Number(commentRow?.count) || 0,
+      wishCount: Number(wishRow?.count) || 0,
+      playlistCount: Number(playlistRow?.count) || 0,
+    },
+  })
+}
+
+/** 给其他用户留言的最大长度 */
+const USER_MESSAGE_MAX_LENGTH = 200
+
+/** 给他人留言 POST /api/user/message { userId, content }：写入对方的站内通知 */
+async function handleSendUserMessage(request, env) {
+  const userId = getRequestUserId(request)
+  const body = await request.json().catch(() => ({}))
+  const targetId = Number(body.userId)
+  const content = String(body.content || '').trim()
+  if (!targetId || !content)
+    return jsonResp({ code: 400, msg: '留言内容不能为空' })
+  if (content.length > USER_MESSAGE_MAX_LENGTH)
+    return jsonResp({ code: 400, msg: `留言最多 ${USER_MESSAGE_MAX_LENGTH} 字` })
+  if (String(targetId) === String(userId))
+    return jsonResp({ code: 400, msg: '不能给自己留言' })
+
+  const target = await env.DB.prepare('SELECT id FROM users WHERE id = ?').bind(targetId).first()
+  if (!target?.id)
+    return jsonResp({ code: 404, msg: '用户不存在' }, 404)
+
+  const identity = await getUserIdentity(env, userId)
+  await pushNotification(env.DB, {
+    userId: targetId,
+    type: 'user_message',
+    senderId: userId,
+    senderName: identity.nickname,
+    content,
+  })
+  return jsonResp({ code: 200, msg: '留言已送达', data: null })
 }
 
 /**
@@ -2195,6 +2278,8 @@ async function handleAddComment(request, env) {
   const songId = Number(body.songId)
   const content = String(body.content || '').trim()
   let parentId = Number(body.parentId) || 0
+  /** 被回复评论的作者，用于站内通知 */
+  let replyToUserId = ''
   if (!songId || !content) {
     return jsonResp({ code: 400, msg: '评论内容不能为空' })
   }
@@ -2202,10 +2287,11 @@ async function handleAddComment(request, env) {
     return jsonResp({ code: 400, msg: `评论最多 ${COMMENT_MAX_LENGTH} 字` })
   }
   if (parentId) {
-    const parent = await env.DB.prepare('SELECT id, song_id, parent_id FROM song_comment WHERE id = ?').bind(parentId).first()
+    const parent = await env.DB.prepare('SELECT id, song_id, parent_id, user_id FROM song_comment WHERE id = ?').bind(parentId).first()
     if (!parent || parent.song_id !== songId) {
       return jsonResp({ code: 400, msg: '回复的评论不存在' })
     }
+    replyToUserId = String(parent.user_id || '')
     // 二级回复归到顶层，保持一层结构
     parentId = parent.parent_id || parentId
   }
@@ -2216,6 +2302,20 @@ async function handleAddComment(request, env) {
      VALUES (?, ?, ?, ?, 0, DATETIME('now'))`,
   ).bind(songId, String(userId), content, parentId).run()
   const identity = await getUserIdentity(env, userId)
+  // 回复了别人的评论 → 给被回复的人发站内通知（自己回复自己不通知）
+  if (replyToUserId && replyToUserId !== String(userId)) {
+    const songRow = await env.DB.prepare('SELECT title FROM songs WHERE id = ?').bind(songId).first()
+    await pushNotification(env.DB, {
+      userId: replyToUserId,
+      type: 'comment_reply',
+      senderId: userId,
+      senderName: identity.nickname,
+      content,
+      targetId: songId,
+      targetTitle: songRow?.title || '',
+      refId: Number(body.parentId) || 0,
+    })
+  }
   return jsonResp({
     code: 200,
     msg: '评论成功',
@@ -2289,6 +2389,13 @@ async function handleDeleteComment(request, env) {
     return jsonResp({ code: 403, msg: '只能删除自己的评论' }, 403)
   }
 
+  // 先清理该评论（含其回复）产生的通知，再清点赞记录与评论本身
+  await clearNotifications(env.DB, {
+    sql: `DELETE FROM user_notification
+          WHERE type = 'comment_reply'
+            AND (ref_id = ? OR ref_id IN (SELECT id FROM song_comment WHERE parent_id = ?))`,
+    params: [id, id],
+  })
   // 先清理点赞记录（含子回复），再删评论与回复
   await env.DB.prepare(
     'DELETE FROM song_comment_like WHERE comment_id = ? OR comment_id IN (SELECT id FROM song_comment WHERE parent_id = ?)',
@@ -3303,7 +3410,7 @@ async function handleAddWishMessage(request, env) {
   if (content.length > WISH_MESSAGE_MAX_LENGTH) {
     return jsonResp({ code: 400, msg: `留言最多 ${WISH_MESSAGE_MAX_LENGTH} 字` })
   }
-  const wish = await env.DB.prepare('SELECT id FROM wish WHERE id = ?').bind(wishId).first()
+  const wish = await env.DB.prepare('SELECT id, user_id, content FROM wish WHERE id = ?').bind(wishId).first()
   if (!wish) {
     return jsonResp({ code: 404, msg: '心愿不存在' }, 404)
   }
@@ -3315,6 +3422,19 @@ async function handleAddWishMessage(request, env) {
   ).bind(wishId, String(userId), content).run()
   const countRow = await env.DB.prepare('SELECT COUNT(*) AS count FROM wish_message WHERE wish_id = ?').bind(wishId).first()
   const identity = await getUserIdentity(env, userId)
+  // 在别人的心愿下留言 → 通知心愿作者（自己给自己留言不通知）
+  if (String(wish.user_id) !== String(userId)) {
+    await pushNotification(env.DB, {
+      userId: wish.user_id,
+      type: 'wish_message',
+      senderId: userId,
+      senderName: identity.nickname,
+      content,
+      targetId: wishId,
+      targetTitle: String(wish.content || '').slice(0, 40),
+      refId: result.meta?.last_row_id || 0,
+    })
+  }
   return jsonResp({
     code: 200,
     msg: '留言成功',
@@ -3346,8 +3466,117 @@ async function handleDeleteWish(request, env) {
   const wish = await DB.prepare('SELECT id FROM wish WHERE id = ?').bind(id).first()
   if (!wish)
     return jsonResp({ code: 404, msg: '心愿不存在' }, 404)
+  await clearNotifications(DB, {
+    sql: `DELETE FROM user_notification WHERE type = 'wish_message' AND target_id = ?`,
+    params: [id],
+  })
   await DB.prepare('DELETE FROM wish_like WHERE wish_id = ?').bind(id).run()
   await DB.prepare('DELETE FROM wish_message WHERE wish_id = ?').bind(id).run()
   await DB.prepare('DELETE FROM wish WHERE id = ?').bind(id).run()
   return jsonResp({ code: 200, msg: '心愿已删除' })
+}
+
+/**
+ * 站内通知表（需手动执行建表 SQL）：user_notification
+ * 目前支持两种通知：comment_reply 评论回复、wish_message 心愿留言
+ */
+
+/** 写入通知：表未建时只打日志，不影响评论 / 留言主流程 */
+async function pushNotification(DB, payload) {
+  try {
+    await DB.prepare(
+      `INSERT INTO user_notification
+        (user_id, type, sender_id, sender_name, content, target_id, target_title, ref_id, create_time)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, DATETIME('now'))`,
+    ).bind(
+      String(payload.userId),
+      payload.type,
+      String(payload.senderId || ''),
+      payload.senderName || '',
+      payload.content || '',
+      Number(payload.targetId) || 0,
+      payload.targetTitle || '',
+      Number(payload.refId) || 0,
+    ).run()
+  } catch (e) {
+    console.warn('[notification] 写入失败，请确认已执行 user_notification 建表 SQL', e)
+  }
+}
+
+/** 清理通知：表未建时静默跳过，避免影响评论 / 心愿 / 账号删除 */
+async function clearNotifications(DB, { sql, params = [] }) {
+  try {
+    await DB.prepare(sql).bind(...params).run()
+  } catch (e) {
+    console.warn('[notification] 清理失败，请确认已执行 user_notification 建表 SQL', e)
+  }
+}
+
+/** 通知行 → 前端结构：发送者昵称 / 头像取 users 表最新值，取不到时用写入时的快照 */
+function mapNotificationRow(row) {
+  return {
+    id: row.id,
+    type: row.type,
+    senderId: String(row.sender_id || ''),
+    senderName: row.sender_nickname || row.sender_name || '',
+    senderAvatar: row.sender_avatar || '',
+    content: row.content || '',
+    targetId: row.target_id,
+    targetTitle: row.target_title || '',
+    read: !!row.is_read,
+    createTime: toEpochMs(row.create_time),
+  }
+}
+
+/** 消息通知列表 GET /api/notification/list?page=&pageSize= */
+async function handleListNotifications(request, env) {
+  const userId = String(getRequestUserId(request))
+  const url = new URL(request.url)
+  const page = Math.max(1, Number(url.searchParams.get('page')) || 1)
+  const pageSize = Math.min(50, Math.max(1, Number(url.searchParams.get('pageSize')) || 20))
+
+  const totalRow = await env.DB.prepare('SELECT COUNT(*) AS count FROM user_notification WHERE user_id = ?')
+    .bind(userId)
+    .first()
+  const { results } = await env.DB.prepare(
+    `SELECT n.*, u.nickname AS sender_nickname, u.avatar_url AS sender_avatar
+     FROM user_notification n
+     LEFT JOIN users u ON u.id = n.sender_id
+     WHERE n.user_id = ?
+     ORDER BY n.id DESC
+     LIMIT ? OFFSET ?`,
+  )
+    .bind(userId, pageSize, (page - 1) * pageSize)
+    .all()
+
+  return jsonResp({
+    code: 200,
+    msg: '获取通知成功',
+    data: {
+      list: (results || []).map(mapNotificationRow),
+      total: Number(totalRow?.count) || 0,
+      page,
+      pageSize,
+    },
+  })
+}
+
+/** 未读通知数 GET /api/notification/unread */
+async function handleNotificationUnreadCount(request, env) {
+  const userId = String(getRequestUserId(request))
+  const row = await env.DB.prepare('SELECT COUNT(*) AS count FROM user_notification WHERE user_id = ? AND is_read = 0')
+    .bind(userId)
+    .first()
+  return jsonResp({ code: 200, msg: '获取未读数成功', data: { count: Number(row?.count) || 0 } })
+}
+
+/** 标记已读 POST /api/notification/read { id? }：传 id 标记单条，不传标记全部 */
+async function handleMarkNotificationsRead(request, env) {
+  const userId = String(getRequestUserId(request))
+  const body = await request.json().catch(() => ({}))
+  const id = Number(body.id) || 0
+  const result = id
+    ? await env.DB.prepare('UPDATE user_notification SET is_read = 1 WHERE id = ? AND user_id = ?').bind(id, userId).run()
+    : await env.DB.prepare('UPDATE user_notification SET is_read = 1 WHERE user_id = ? AND is_read = 0').bind(userId).run()
+  return jsonResp({ code: 200, msg: '操作成功', data: { count: result.meta?.changes || 0 } })
 }

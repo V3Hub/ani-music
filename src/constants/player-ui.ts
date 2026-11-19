@@ -1,3 +1,6 @@
+/** 记录播放页当前底栏 Tab：刷新页面或从其他页面返回时恢复原来页面 */
+export const PLAYER_RETURN_TAB_KEY = 'AIN_PLAYER_RETURN_TAB'
+
 /** 播放源选项 */
 export interface PlaybackSourceOption {
   label: string

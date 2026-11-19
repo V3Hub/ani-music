@@ -36,6 +36,16 @@ const router = createRouter({
       component: () => import('@/views/AccountView.vue'),
     },
     {
+      path: '/notifications',
+      name: 'notifications',
+      component: () => import('@/views/NotificationView.vue'),
+    },
+    {
+      path: '/user/:id',
+      name: 'user-detail',
+      component: () => import('@/views/UserDetailView.vue'),
+    },
+    {
       path: '/admin/review',
       name: 'adminReview',
       component: () => import('@/views/AdminReviewView.vue'),

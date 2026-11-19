@@ -56,6 +56,7 @@
 <script setup lang="ts">
 import type { PlaylistItem } from '@/types/music'
 import VipBadge from '@/components/common/VipBadge.vue'
+import { resolveDisplayName } from '@/utils/user-token'
 import { useUserProfileStore } from '@/stores/userProfile'
 import { computed, ref } from 'vue'
 
@@ -69,12 +70,6 @@ const props = defineProps<{
   shareCount?: number
 }>()
 
-/** 管理员可删除任意歌单 */
-const profileStore = useUserProfileStore()
-
-/** 作者展示名：真实昵称优先，其次 userToken，最后 guest */
-const ownerName = computed(() => props.playlist?.nickname || props.playlist?.userToken || 'guest')
-
 const emit = defineEmits<{
   (e: 'update:visible', value: boolean): void
   (e: 'favorite'): void
@@ -82,6 +77,15 @@ const emit = defineEmits<{
   (e: 'delete'): void
   (e: 'share'): void
 }>()
+
+/** 管理员可删除任意歌单 */
+const profileStore = useUserProfileStore()
+
+/** 作者展示名：真实昵称优先，其次 userToken，最后 guest */
+const ownerName = computed(() => resolveDisplayName({
+  nickname: props.playlist?.nickname,
+  userToken: props.playlist?.userToken,
+}))
 
 const LOGO_URL = '/qs.svg'
 

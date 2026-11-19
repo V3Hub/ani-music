@@ -42,9 +42,9 @@
 
       <div class="comment-scroll" @scroll="onScroll">
         <div v-for="item in comments" :key="item.id" class="comment-item">
-          <img class="avatar" :src="avatarOf(item)" alt="">
+          <img class="avatar clickable" :src="avatarOf(item)" alt="" @click="openUserProfile(item.userId)">
           <div class="comment-main">
-            <p class="author">
+            <p class="author clickable" @click="openUserProfile(item.userId)">
               {{ displayName(item) }}
               <VipBadge :level="item.vipLevel" small />
             </p>
@@ -63,9 +63,9 @@
 
             <div v-if="item.replies.length" class="reply-list">
               <div v-for="reply in item.replies" :key="reply.id" class="reply-item">
-                <img class="avatar small" :src="avatarOf(reply)" alt="">
+                <img class="avatar small clickable" :src="avatarOf(reply)" alt="" @click="openUserProfile(reply.userId)">
                 <div class="comment-main">
-                  <p class="author">
+                  <p class="author clickable" @click="openUserProfile(reply.userId)">
                     {{ displayName(reply) }}
                     <VipBadge :level="reply.vipLevel" small />
                   </p>
@@ -174,12 +174,13 @@
 <script setup lang="ts">
 import type { Song, SongComment } from '@/types/music'
 import { addSongComment, deleteSongComment, getSongCommentCount, getSongComments, toggleCommentLike } from '@/api/music'
-import { toUserToken } from '@/composables/player/usePlaylistDiscovery'
+import { resolveDisplayName } from '@/utils/user-token'
 import { useUserProfileStore } from '@/stores/userProfile'
-import { resolveAvatar } from '@/utils/avatar'
+import { resolveAvatarOrDefault } from '@/utils/avatar'
 import VipBadge from '@/components/common/VipBadge.vue'
 import { showToast } from 'vant'
 import { computed, nextTick, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 
 interface CommentNode extends SongComment {
   replies: SongComment[]
@@ -198,6 +199,7 @@ const visible = defineModel<boolean>('visible', { required: true })
 
 /** 管理员可删除任意评论 */
 const profileStore = useUserProfileStore()
+const router = useRouter()
 
 const PAGE_SIZE = 20
 
@@ -213,23 +215,23 @@ const replyTarget = ref<SongComment | null>(null)
 const editorVisible = ref(false)
 const inputRef = ref<HTMLTextAreaElement | null>(null)
 
-/** 有真实头像用真实头像，否则用 DiceBear（seed 为 userId） */
-function avatarOf(comment: SongComment) {
-  return resolveAvatar(
-    comment.avatar,
-    `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(comment.userId || 'guest')}`,
-  )
+/** 查看用户资料并留言：跳转到账号详情页 */
+function openUserProfile(userId: string | number) {
+  if (!userId)
+    return
+  router.push(`/user/${userId}`)
 }
 
-/** 真实昵称优先，否则把数字 id 展示为 userToken */
+/** 有真实头像用真实头像，否则用 DiceBear（seed 为 userId） */
+function avatarOf(comment: SongComment) {
+  return resolveAvatarOrDefault(comment.avatar, comment.userId)
+}
+
 function displayName(comment: SongComment) {
-  if (comment.nickname)
-    return comment.nickname
-  const value = String(comment.userId || '')
-  const numeric = Number(value)
-  if (value && Number.isFinite(numeric))
-    return toUserToken(numeric)
-  return value || 'guest'
+  return resolveDisplayName({
+    nickname: comment.nickname,
+    userId: comment.userId,
+  })
 }
 
 function formatTime(ts: number) {
@@ -614,6 +616,10 @@ function onHeaderClick() {
     width: 20px;
     height: 20px;
   }
+
+  &.clickable {
+    cursor: pointer;
+  }
 }
 
 .comment-main {
@@ -628,6 +634,10 @@ function onHeaderClick() {
   white-space: nowrap;
   text-overflow: ellipsis;
   color: rgba(255, 255, 255, 0.55);
+
+  &.clickable {
+    cursor: pointer;
+  }
 }
 
 .content {

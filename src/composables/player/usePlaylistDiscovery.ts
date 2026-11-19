@@ -5,13 +5,7 @@ import type { PlaylistContext, PlaylistItem, Song } from '@/types/music'
 import { getPlaylistDetail, getPlaylistDiscover } from '@/api/music'
 import { PlaylistSource } from '@/constants/playlist'
 import { ref } from 'vue'
-
-export const DISCOVER_USER_TOKEN = 'discover'
-
-/** 后端返回的 user_id 转成与 token 前半段一致的 userToken（base64） */
-export function toUserToken(userId?: number) {
-  return userId != null ? btoa(String(userId)) : DISCOVER_USER_TOKEN
-}
+import { toUserToken } from '@/utils/user-token'
 
 export function usePlaylistDiscovery() {
   const discoverPlaylists = ref<PlaylistItem[]>([])

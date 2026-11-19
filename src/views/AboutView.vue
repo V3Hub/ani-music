@@ -88,7 +88,7 @@
       </section>
 
       <p class="copyright">
-        © 2026 V3Hub
+        © 2026 Ani
       </p>
     </main>
   </div>

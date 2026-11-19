@@ -1,23 +1,15 @@
 /** 心愿墙展示工具：用户头像 / 昵称、相对时间 */
-import { resolveAvatar } from '@/utils/avatar'
+import { resolveAvatarOrDefault } from '@/utils/avatar'
+import { resolveDisplayName } from '@/utils/user-token'
 
 /** 有真实头像时用真实头像，否则用 DiceBear（seed 为 userId，同一用户头像固定） */
 export function wishAvatarUrl(userId: string, avatar?: string) {
-  return resolveAvatar(
-    avatar,
-    `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(userId || 'guest')}`,
-  )
+  return resolveAvatarOrDefault(avatar, userId)
 }
 
-/** 有真实昵称优先展示，否则数字 userId 展示为 userToken（base64） */
+/** 有真实昵称优先展示，否则数字 userId 展示为 userToken */
 export function wishUserName(userId: string, nickname?: string) {
-  if (nickname)
-    return nickname
-  const value = String(userId || '')
-  const numeric = Number(value)
-  if (value && Number.isFinite(numeric))
-    return btoa(String(numeric))
-  return value || 'guest'
+  return resolveDisplayName({ userId, nickname })
 }
 
 /** 相对时间：刚刚 / x 分钟前 / x 小时前 / x 天前 / 月日 */

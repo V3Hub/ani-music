@@ -40,8 +40,8 @@
               {{ wish.content }}
             </p>
             <div class="detail-meta">
-              <img class="avatar" :src="wishAvatarUrl(wish.userId, wish.avatar)" alt="">
-              <span class="user">
+              <img class="avatar clickable" :src="wishAvatarUrl(wish.userId, wish.avatar)" alt="" @click="openUserProfile(wish.userId)">
+              <span class="user clickable" @click="openUserProfile(wish.userId)">
                 {{ wishUserName(wish.userId, wish.nickname) }}
                 <VipBadge :level="wish.vipLevel" small />
               </span>
@@ -78,10 +78,10 @@
 
           <ul v-else class="message-list">
             <li v-for="message in messages" :key="message.id" class="message-item">
-              <img class="avatar" :src="wishAvatarUrl(message.userId, message.avatar)" alt="">
+              <img class="avatar clickable" :src="wishAvatarUrl(message.userId, message.avatar)" alt="" @click="openUserProfile(message.userId)">
               <div class="message-main">
                 <div class="message-top">
-                  <span class="user">
+                  <span class="user clickable" @click="openUserProfile(message.userId)">
                     {{ wishUserName(message.userId, message.nickname) }}
                     <VipBadge :level="message.vipLevel" small />
                     <i v-if="message.mine" class="mine">我的</i>
@@ -154,6 +154,7 @@ import { formatWishTime, wishAvatarUrl, wishUserName } from '@/utils/wish'
 import VipBadge from '@/components/common/VipBadge.vue'
 import { showToast } from 'vant'
 import { computed, nextTick, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 
 const props = defineProps<{
   visible: boolean
@@ -180,6 +181,15 @@ const editorRef = ref<HTMLTextAreaElement>()
 const liked = ref(false)
 const likeCount = ref(0)
 const liking = ref(false)
+
+const router = useRouter()
+
+/** 查看用户资料并留言：跳转到账号详情页 */
+function openUserProfile(userId: string | number) {
+  if (!userId)
+    return
+  router.push(`/user/${userId}`)
+}
 
 // ========== 下拉关闭：拖动顶部标题栏，避免与留言列表滚动冲突 ==========
 const CLOSE_DISTANCE = 80
@@ -485,10 +495,18 @@ async function sendMessage() {
   object-fit: cover;
   background: rgba(255, 255, 255, 0.12);
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.22);
+
+  &.clickable {
+    cursor: pointer;
+  }
 }
 
 .user {
   color: rgba(255, 255, 255, 0.74);
+
+  &.clickable {
+    cursor: pointer;
+  }
 }
 
 .time {

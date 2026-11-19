@@ -65,12 +65,12 @@
             @click="openDetail(wish)"
           >
             <span class="rank-flag">{{ index + 1 }}</span>
-            <img class="avatar" :src="wishAvatarUrl(wish.userId, wish.avatar)" alt="">
+            <img class="avatar clickable" :src="wishAvatarUrl(wish.userId, wish.avatar)" alt="" @click.stop="openUserProfile(wish.userId)">
             <div class="top-main">
               <p class="top-content">
                 {{ wish.content }}
               </p>
-              <span class="wish-user">
+              <span class="wish-user clickable" @click.stop="openUserProfile(wish.userId)">
                 {{ wishUserName(wish.userId, wish.nickname) }}
                 <VipBadge :level="wish.vipLevel" small />
                 <i v-if="wish.mine" class="mine-inline">我的</i>
@@ -116,8 +116,8 @@
                 {{ currentWish.content }}
               </p>
               <div class="wish-meta">
-                <img class="avatar" :src="wishAvatarUrl(currentWish.userId, currentWish.avatar)" alt="">
-                <span class="wish-user">
+                <img class="avatar clickable" :src="wishAvatarUrl(currentWish.userId, currentWish.avatar)" alt="" @click.stop="openUserProfile(currentWish.userId)">
+                <span class="wish-user clickable" @click.stop="openUserProfile(currentWish.userId)">
                   {{ wishUserName(currentWish.userId, currentWish.nickname) }}
                   <VipBadge :level="currentWish.vipLevel" small />
                 </span>
@@ -167,6 +167,7 @@ import { addWish, getWishes, toggleWishLike } from '@/api/wish'
 import { formatWishTime, wishAvatarUrl, wishUserName } from '@/utils/wish'
 import VipBadge from '@/components/common/VipBadge.vue'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import WishDetailPopup from './WishDetailPopup.vue'
 
 const ROTATE_INTERVAL = 4500
@@ -182,6 +183,15 @@ const focused = ref(false)
 const rotateIndex = ref(0)
 const detailVisible = ref(false)
 const activeWish = ref<Wish | null>(null)
+
+const router = useRouter()
+
+/** 查看用户资料并留言：跳转到账号详情页 */
+function openUserProfile(userId: string | number) {
+  if (!userId)
+    return
+  router.push(`/user/${userId}`)
+}
 
 let rotateTimer: ReturnType<typeof setInterval> | undefined
 let touchStartX = 0
@@ -756,6 +766,10 @@ onBeforeUnmount(pauseRotate)
   object-fit: cover;
   background: rgba(255, 255, 255, 0.12);
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.22);
+
+  &.clickable {
+    cursor: pointer;
+  }
 }
 
 .wish-user {
@@ -765,6 +779,10 @@ onBeforeUnmount(pauseRotate)
   color: rgba(255, 255, 255, 0.66);
   text-overflow: ellipsis;
   white-space: nowrap;
+
+  &.clickable {
+    cursor: pointer;
+  }
 }
 
 .wish-time {

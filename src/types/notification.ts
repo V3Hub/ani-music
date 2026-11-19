@@ -1,0 +1,22 @@
+/** 站内消息通知：别人回复你的评论 / 在你的心愿下留言 / 给你留言 */
+export type NotificationType = 'comment_reply' | 'wish_message' | 'user_message'
+
+export interface UserNotification {
+  id: number
+  type: NotificationType
+  /** 触发者 users.id */
+  senderId: string
+  /** 触发者昵称（优先取 users 表最新值） */
+  senderName: string
+  /** 触发者头像（base64 / data URL / http 地址） */
+  senderAvatar: string
+  /** 回复 / 留言内容 */
+  content: string
+  /** comment_reply 时为 song_id，wish_message 时为 wish_id */
+  targetId: number
+  /** 歌曲名 / 心愿内容摘要 */
+  targetTitle: string
+  read: boolean
+  /** 毫秒时间戳 */
+  createTime: number
+}

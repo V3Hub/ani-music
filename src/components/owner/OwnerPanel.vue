@@ -2,7 +2,17 @@
   <div class="owner-panel">
     <div class="owner-header">
       <div class="listen-time">今日已听 {{ listenTime }}</div>
-      <van-icon class="settings-btn" name="setting-o" size="22" @click="emit('openSettings')" />
+      <div class="header-actions">
+        <van-badge
+          v-if="loggedIn"
+          :content="unreadCount > 99 ? '99+' : String(unreadCount)"
+          :show-zero="false"
+          :offset="[2, 2]"
+        >
+          <van-icon class="notice-btn" name="bell" size="22" @click="emit('openNotifications')" />
+        </van-badge>
+        <van-icon class="settings-btn" name="setting-o" size="22" @click="emit('openSettings')" />
+      </div>
     </div>
     <div class="owner-content">
       <div class="user-info" @click="handleUserClick">
@@ -91,13 +101,13 @@
 
 <script setup lang="ts">
 import type { PlaylistItem, Song } from '@/types/music'
+import { getUnreadNotificationCount } from '@/api/notification'
 import WaveBox from '@/components/waveBox/WaveBox.vue'
 import VipBadge from '@/components/common/VipBadge.vue'
 import { useUserProfileStore } from '@/stores/userProfile'
-import { resolveAvatar } from '@/utils/avatar'
-import { computed } from 'vue'
-
-const profileStore = useUserProfileStore()
+import { resolveAvatarOrDefault } from '@/utils/avatar'
+import { resolveDisplayName } from '@/utils/user-token'
+import { computed, onMounted, ref } from 'vue'
 
 const props = defineProps<{
   userToken: string
@@ -123,16 +133,32 @@ const emit = defineEmits<{
   (e: 'openPlaylist', id: number): void
   (e: 'createPlaylist'): void
   (e: 'openSettings'): void
+  (e: 'openNotifications'): void
   (e: 'openLogin'): void
   (e: 'openAccount'): void
 }>()
 
+const profileStore = useUserProfileStore()
+
+/** 未读消息数：进入「我的」页时拉取一次，铃铛角标展示 */
+const unreadCount = ref(0)
+
+onMounted(async () => {
+  if (!props.loggedIn)
+    return
+  try {
+    unreadCount.value = await getUnreadNotificationCount()
+  } catch {
+    // 未读数失败不影响页面，错误由拦截器提示
+  }
+})
+
 /** 没有上传头像时回退到按 userToken 生成的默认头像 */
-const avatarSrc = computed(() => resolveAvatar(
-  props.avatar,
-  `https://api.dicebear.com/7.x/avataaars/svg?seed=${props.userToken || 'guest'}`,
-))
-const displayName = computed(() => props.nickname || props.userToken || '游客')
+const avatarSrc = computed(() => resolveAvatarOrDefault(props.avatar, props.userToken))
+const displayName = computed(() => resolveDisplayName({
+  nickname: props.nickname,
+  userToken: props.userToken,
+}))
 const hintText = computed(() => (props.loggedIn ? '查看账号详情' : '点击登录 / 注册'))
 
 /** 未登录去登录页，已登录进入账号详情页 */
@@ -176,6 +202,13 @@ function coverOf(pic?: string) {
       opacity: 0.6;
     }
 
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .notice-btn,
     .settings-btn {
       color: var(--theme-text, #fff);
       cursor: pointer;

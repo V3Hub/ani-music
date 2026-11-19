@@ -179,4 +179,4 @@ D1 绑定名为 `DB`。部署步骤：
 
 ## 许可证
 
-[MIT](./LICENSE) © 2026 V3Hub
+[MIT](./LICENSE) © 2026 Ani

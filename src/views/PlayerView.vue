@@ -53,6 +53,7 @@
         @open-playlist="onOpenPlaylist"
         @create-playlist="createVisible = true"
         @open-settings="openSettings"
+        @open-notifications="router.push('/notifications')"
         @open-login="router.push('/login')"
         @open-account="router.push('/account')"
       />
@@ -125,6 +126,7 @@
       @set-sleep-timer="setSleepTimer"
       @logout="handleLogout"
       @switch-account="handleSwitchAccount"
+      @remove-account="handleRemoveAccount"
       @about="openAbout"
       @admin-review="openAdminReview"
       @admin-error-logs="openAdminErrorLogs"
@@ -177,16 +179,18 @@ import { PlaylistSource } from '@/constants/playlist'
 import { showToast } from 'vant'
 import { useListeningMode } from '@/composables/player/useListeningMode'
 import { usePlaybackControl } from '@/composables/player/usePlaybackControl'
-import { usePlaylistDiscovery, toUserToken } from '@/composables/player/usePlaylistDiscovery'
+import { usePlaylistDiscovery } from '@/composables/player/usePlaylistDiscovery'
+import { toUserToken } from '@/utils/user-token'
 import { usePlaylistLibrary } from '@/composables/player/usePlaylistLibrary'
 import { usePlayQueue } from '@/composables/player/usePlayQueue'
-import { usePlayerNavigation } from '@/composables/player/usePlayerNavigation'
+import { PLAYER_TABS, usePlayerNavigation } from '@/composables/player/usePlayerNavigation'
 import { usePlaybackSource } from '@/composables/player/usePlaybackSource'
 import { useListenTimeStat } from '@/composables/useListenTimeStat'
 import { usePlayerStore } from '@/stores/player'
 import { useUserStore } from '@/stores/user'
 import { useUserProfileStore } from '@/stores/userProfile'
 import { LOGIN_RETURN_OWNER_KEY } from '@/constants/auth'
+import { PLAYER_RETURN_TAB_KEY } from '@/constants/player-ui'
 import { downloadSong } from '@/utils/download'
 import { shareSong } from '@/utils/share'
 import { play } from '@/services/audio-player'
@@ -214,15 +218,31 @@ const player = usePlayerStore()
 const router = useRouter()
 const userStore = useUserStore()
 const profileStore = useUserProfileStore()
+const {
+  settingsVisible,
+  pickerVisible,
+  source,
+  sourceOptions,
+  currentSourceLabel,
+  openSettings,
+  confirmSource,
+  sleepLabel,
+  sleepMinutes,
+  setSleepTimer,
+} = usePlaybackSource()
 
-/** 退出登录：清 token、资料与历史账号，整页重启以游客身份重新初始化后回到登录页 */
+/** 退出登录：清 token 与资料，保留历史账号便于之后切换账号 */
 function handleLogout() {
   settingsVisible.value = false
   userStore.clearToken()
-  userStore.clearAccounts()
   profileStore.applyProfile(null)
   // 整页重载会重建全部内存状态（歌单、队列、资料等），并重新执行一次游客自动登录
   window.location.replace('/login')
+}
+
+/** 从历史账号列表中删除账号 */
+function handleRemoveAccount(userId: number) {
+  userStore.removeAccount(userId)
 }
 
 /** 切换到历史账号：换 token 后刷新页面，让各模块按新身份重新拉取 */
@@ -309,6 +329,11 @@ watch(() => player.currentSong?.id, (id) => {
 
 // ========== 组合业务模块 ==========
 const { currentTab, navList, navigate } = usePlayerNavigation()
+
+// 记住当前 Tab：刷新页面或从其他页面返回时，继续停留在原来的页
+watch(currentTab, (tab) => {
+  sessionStorage.setItem(PLAYER_RETURN_TAB_KEY, tab)
+})
 const {
   sidebarWidth,
   dragging,
@@ -319,18 +344,6 @@ const {
   toggleSidebar,
   swipeHandlers,
 } = useListeningMode()
-const {
-  settingsVisible,
-  pickerVisible,
-  source,
-  sourceOptions,
-  currentSourceLabel,
-  openSettings,
-  confirmSource,
-  sleepLabel,
-  sleepMinutes,
-  setSleepTimer,
-} = usePlaybackSource()
 const { togglePlayback } = usePlaybackControl()
 
 /** 打开歌曲标签管理页（仅管理员可见入口，接口侧仍有权限校验） */
@@ -677,6 +690,13 @@ function onFavorite(id?: string | number) {
 }
 
 onMounted(async () => {
+  // 刷新页面 / 从其他页面返回时，恢复离开前的 Tab（登录回「我的」的标记优先级更高）
+  const savedTab = sessionStorage.getItem(PLAYER_RETURN_TAB_KEY)
+  if (savedTab) {
+    const tab = Object.values(PLAYER_TABS).find(item => item === savedTab)
+    if (tab)
+      navigate(tab)
+  }
   // 从登录 / 注册审批 / 关于等页面返回时：切回「我的」页，资料与列表按新账号重新拉取
   if (sessionStorage.getItem(LOGIN_RETURN_OWNER_KEY)) {
     sessionStorage.removeItem(LOGIN_RETURN_OWNER_KEY)
