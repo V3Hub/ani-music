@@ -16,6 +16,13 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.1.7',
+    date: '2026-11-19',
+    items: [
+      { type: 'other', text: 'fix: 描述文件独立打开时顶部留白' },
+    ],
+  },
+  {
     version: '0.1.6',
     date: '2026-11-19',
     items: [
