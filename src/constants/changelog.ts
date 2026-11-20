@@ -16,6 +16,13 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.1.9',
+    date: '2026-11-20',
+    items: [
+      { type: 'feat', text: '播放列表来源标注、统一下拉关闭手势与轻量版下载卡片优化' },
+    ],
+  },
+  {
     version: '0.1.8',
     date: '2026-11-20',
     items: [
