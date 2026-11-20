@@ -6,8 +6,10 @@
     teleport="body"
     class="add-to-playlist-popup"
     @update:show="emit('update:visible', $event)"
+    @closed="reset"
   >
-    <div class="add-to-playlist">
+    <div class="add-to-playlist" :style="dragStyle" v-on="handlers">
+      <div class="drag-bar" />
       <div class="sheet-title">
         添加到歌单
       </div>
@@ -61,6 +63,7 @@
 
 <script setup lang="ts">
 import type { PlaylistItem } from '@/types/music'
+import { useSwipeDownClose } from '@/composables/useSwipeDownClose'
 
 defineProps<{
   visible: boolean
@@ -77,21 +80,42 @@ const emit = defineEmits<{
 }>()
 
 const LOGO_URL = '/qs.svg'
+
+// 下拉关闭：整卡跟手移动（含弹层背景），列表区域保持原生滚动
+const { dragStyle, handlers, reset } = useSwipeDownClose({
+  onClose: () => emit('update:visible', false),
+  threshold: 110,
+  ignoreSelector: '.target-list',
+  lockDirection: true,
+})
 </script>
 
 <style lang="scss" scoped>
 .add-to-playlist-popup {
-  /* 三级弹层：比歌曲操作弹层再亮一层，避免两层背景一样分不清 */
-  background: var(--popup-bg-elevated) !important;
+  /* 背景交给内容层：下拉拖动时背景跟内容一起移动 */
+  background: transparent !important;
 }
 
 .add-to-playlist {
   padding: 4px 20px 20px;
   color: var(--theme-text, #fff);
+  /* 三级弹层：比歌曲操作弹层再亮一层，避免两层背景一样分不清 */
+  background: var(--popup-bg-elevated);
+  border-radius: inherit;
+}
+
+.drag-bar {
+  width: 40px;
+  height: 4px;
+  margin: 8px auto 0;
+  border-radius: 999px;
+  /* 跟随主题文字色：深色背景为浅色条，浅色背景为深色条，两者都可见 */
+  background: currentColor;
+  opacity: 0.3;
 }
 
 .sheet-title {
-  padding: 16px 0;
+  padding: 12px 0 16px;
   font-size: 16px;
   font-weight: 600;
   text-align: center;

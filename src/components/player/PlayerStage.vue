@@ -267,22 +267,21 @@ function onSliderDragEnd() {
   }
 
   .lyric-scroll {
-    flex: 0 0 84px;
-    height: 84px;
+    // 高度刚好容纳 2 行歌词，当前行居中、另一行完整显示，避免半行被裁切
+    flex: 0 0 71px;
+    height: 71px;
     margin-top: 4px;
-    overflow-y: auto;
-    overflow-x: hidden;
+    // 歌词只做程序化滚动：禁用手动滑动，避免与上下切歌手势冲突
+    overflow: hidden;
     scrollbar-width: none;
-    // 选中行固定在顶部，只对底部做渐隐
-    mask-image: linear-gradient(to bottom, #000 0%, #000 76%, transparent 100%);
 
     &::-webkit-scrollbar {
       display: none;
     }
 
     .lyric-container {
-      // 留出容器高度减去一行的高度，保证最后几行也能滚到顶部
-      padding-bottom: 54px;
+      // 底部留出一行：保证最后几行也能滚到顶部，始终显示完整两行
+      padding: 0 0 36px;
 
       .lyric-line {
         padding: 5px 0;
@@ -296,13 +295,11 @@ function onSliderDragEnd() {
         text-overflow: ellipsis;
         transition:
           color 0.2s,
-          opacity 0.2s,
-          font-size 0.2s;
+          opacity 0.2s;
 
         &.active {
           color: var(--theme-text, #fff);
           opacity: 1;
-          font-size: 17px;
           font-weight: 500;
         }
       }

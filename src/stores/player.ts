@@ -2,8 +2,11 @@ import type { PlayMode, PlaylistItem, Song } from '@/types/music'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 
-/** 当前播放队列的来源：听歌模式的最热歌曲，或某个歌单 */
-export type QueueSource = { type: 'mode', mode: string } | { type: 'playlist', playlist: PlaylistItem }
+/** 当前播放队列的来源：听歌模式的最热歌曲、某个歌单，或搜索等临时列表 */
+export type QueueSource
+  = | { type: 'mode', mode: string }
+    | { type: 'playlist', playlist: PlaylistItem }
+    | { type: 'list', label: string }
 
 export const usePlayerStore = defineStore('player', () => {
   // ------- state -------

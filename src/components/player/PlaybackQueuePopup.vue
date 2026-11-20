@@ -70,7 +70,10 @@
 
       <div class="queue-card">
         <div class="card-head">
-          <h3 class="card-title">播放列表</h3>
+          <div class="head-left">
+            <h3 class="card-title">播放列表</h3>
+            <span v-if="queueSource" class="card-source">来源 · {{ queueSource }}</span>
+          </div>
           <button type="button" class="mode-pill" @click="emit('togglePlayMode')">
             <van-icon :name="playMode === 0 ? 'sort' : 'replay'" size="13" />
             {{ playMode === 0 ? '顺序播放' : '单曲循环' }}
@@ -141,12 +144,14 @@
 
 <script setup lang="ts">
 import { usePlaybackControl } from '@/composables/player/usePlaybackControl'
+import { useSwipeDownClose } from '@/composables/useSwipeDownClose'
 import { usePlayerStore } from '@/stores/player'
 import WaveBox from '@/components/waveBox/WaveBox.vue'
-import { computed, ref } from 'vue'
 
 defineProps<{
   playMode: number
+  /** 当前队列来源：歌单名 / 听歌模式名 */
+  queueSource?: string
 }>()
 
 const emit = defineEmits<{
@@ -170,65 +175,22 @@ function move(from: number, to: number) {
 }
 
 // ========== 顶部横杠：下拉拖动关闭 / 点击关闭 ==========
-const dragY = ref(0)
-const dragging = ref(false)
-let startY = 0
-/** 本次交互是否发生了拖动：拖动松手后的 click 不当作“点击关闭” */
-let dragged = false
-
-const dragStyle = computed(() => ({
-  transform: `translate3d(0, ${dragY.value}px, 0)`,
-  transition: dragging.value ? 'none' : 'transform 0.22s cubic-bezier(0.25, 0.8, 0.35, 1)',
-}))
-
-function onDragStart(event: TouchEvent) {
-  const touch = event.touches[0]
-  if (!touch)
-    return
-  startY = touch.clientY
-  dragged = false
-  dragging.value = true
-}
-
-function onDragMove(event: TouchEvent) {
-  const touch = event.touches[0]
-  if (!touch || !dragging.value)
-    return
-  dragY.value = Math.max(0, touch.clientY - startY)
-  if (dragY.value > 6)
-    dragged = true
-}
-
-function onDragEnd() {
-  if (!dragging.value)
-    return
-  if (dragY.value >= 110) {
-    // 保持拖出位置直接关闭，让弹层顺势继续下滑，避免先回弹再关闭的抖动
+const {
+  dragStyle,
+  handlers: dragHandlers,
+  reset: resetDrag,
+  wasDragged,
+} = useSwipeDownClose({
+  onClose: () => {
     visible.value = false
-    return
-  }
-  dragging.value = false
-  dragY.value = 0
-}
-
-/** 关闭动画结束后复位位移：无过渡瞬间归零，避免下次打开残留偏移 */
-function resetDrag() {
-  dragY.value = 0
-  requestAnimationFrame(() => {
-    dragging.value = false
-  })
-}
-
-const dragHandlers = {
-  touchstart: onDragStart,
-  touchmove: onDragMove,
-  touchend: onDragEnd,
-  touchcancel: onDragEnd,
-}
+  },
+  threshold: 110,
+  preventScroll: false,
+})
 
 /** 点击顶部横杠关闭：电脑端没有触摸手势时也能关掉弹层 */
 function onTopbarClick() {
-  if (dragged)
+  if (wasDragged())
     return
   visible.value = false
 }
@@ -262,10 +224,12 @@ function onTopbarClick() {
 }
 
 .drag-bar {
-  width: 36px;
+  width: 40px;
   height: 4px;
-  border-radius: 2px;
-  background: rgba(128, 128, 128, 0.5);
+  border-radius: 999px;
+  /* 跟随主题文字色：深浅背景下都清晰可见 */
+  background: currentColor;
+  opacity: 0.3;
 }
 
 .quick-row {
@@ -306,20 +270,45 @@ function onTopbarClick() {
 
 .card-head {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
   padding: 14px 16px 8px;
+
+  .head-left {
+    display: flex;
+    flex: 1;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 8px;
+    min-width: 0;
+  }
 
   .card-title {
     margin: 0;
     font-size: 16px;
     font-weight: 600;
+    line-height: 22px;
+    flex-shrink: 0;
+  }
+
+  .card-source {
+    max-width: 100%;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(128, 128, 128, 0.22);
+    color: inherit;
+    opacity: 0.82;
+    font-size: 12px;
+    line-height: 17px;
+    white-space: normal;
+    word-break: break-word;
   }
 }
 
 .mode-pill {
   display: flex;
   align-items: center;
+  flex-shrink: 0;
   gap: 6px;
   padding: 6px 12px;
   border: none;

@@ -75,17 +75,32 @@
           </ul>
         </section>
 
+        <!-- 应用下载：按应用商店的安装卡片展示 -->
+        <section v-if="mobilePlatform !== 'other'" class="settings-section">
+          <div class="section-title">应用</div>
+          <div class="app-card">
+            <div class="app-icon">
+              <img src="/qs.svg" alt="Ani 音乐">
+            </div>
+            <div class="app-info">
+              <div class="app-name">
+                Ani 音乐
+                <span class="app-tag">轻量版</span>
+              </div>
+              <div class="app-meta">
+                v{{ appVersion }}
+              </div>
+            </div>
+            <button type="button" class="app-install" @click="onDownloadApp">
+              下载
+            </button>
+          </div>
+        </section>
+
         <!-- 其他 -->
         <section class="settings-section">
           <div class="section-title">其他</div>
           <ul class="section-list">
-            <li v-if="mobilePlatform !== 'other'" class="section-item" @click="onDownloadApp">
-              <span class="item-label">下载轻量版 App</span>
-              <span class="item-value">
-                {{ mobilePlatform === 'ios' ? '描述文件' : '添加到主屏幕' }}
-                <van-icon name="down" size="14" class="item-arrow" />
-              </span>
-            </li>
             <li class="section-item" @click="emit('about')">
               <span class="item-label">
                 关于
@@ -216,6 +231,9 @@ const hasSwitchable = computed(() => props.accounts.some(a => a.userId !== props
 
 /** 设备平台：手机端才提供轻量版 App 入口 */
 const mobilePlatform = detectMobilePlatform()
+
+/** 当前构建版本：展示在应用安装卡片上 */
+const appVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : ''
 
 /** 轻量版 App：iOS 下载描述文件安装桌面图标；Android 引导添加到主屏幕 */
 async function onDownloadApp() {
@@ -409,6 +427,78 @@ function onPickSleep(minutes: number) {
 
   .item-arrow {
     opacity: 0.5;
+  }
+}
+
+/** 轻量版下载卡片：柔和的浅底样式 */
+.app-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(128, 128, 128, 0.06);
+
+  .app-icon {
+    flex-shrink: 0;
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    overflow: hidden;
+    background: #101018;
+
+    img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+  }
+
+  .app-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .app-name {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 15px;
+    font-weight: 500;
+  }
+
+  .app-tag {
+    padding: 1px 6px;
+    border-radius: 6px;
+    font-size: 10px;
+    font-weight: 400;
+    opacity: 0.7;
+    background: rgba(128, 128, 128, 0.16);
+  }
+
+  .app-meta {
+    margin-top: 4px;
+    font-size: 11px;
+    opacity: 0.4;
+  }
+
+  .app-install {
+    flex-shrink: 0;
+    min-width: 60px;
+    padding: 7px 16px;
+    border: none;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 500;
+    color: inherit;
+    background: rgba(128, 128, 128, 0.18);
+    cursor: pointer;
+    transition: background 0.12s;
+
+    &:active {
+      background: rgba(128, 128, 128, 0.28);
+    }
   }
 }
 

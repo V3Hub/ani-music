@@ -78,7 +78,7 @@ export function useSongSearch(keyword: Ref<string>, visible: Ref<boolean>) {
       index = searchList.value.length - 1
     }
     // 播放队列切换到搜索列表，后续点击继续往这个列表里加
-    player.setQueueSource(null)
+    player.setQueueSource({ type: 'list', label: '搜索结果' })
     player.setPlayList([...searchList.value], index)
     await playByIndex(index)
     visible.value = false

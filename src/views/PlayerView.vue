@@ -1,5 +1,5 @@
 <template>
-  <div class="player-layout" v-on="swipeHandlers">
+  <div class="player-layout" v-on="layoutSwipeHandlers">
     <!-- 背景层：PlayerStage 独立一层，absolute 铺满整个屏幕含安全区 -->
     <ListeningModeSidebar
       :current-mode="currentMode"
@@ -90,6 +90,7 @@
     <PlaybackQueuePopup
       v-model:visible="queueVisible"
       :play-mode="playMode"
+      :queue-source="queueSourceText"
       @toggle-play-mode="togglePlayMode"
       @share="onShareSong(player.currentSong)"
       @download="onDownloadCurrent"
@@ -335,6 +336,7 @@ watch(currentTab, (tab) => {
   sessionStorage.setItem(PLAYER_RETURN_TAB_KEY, tab)
 })
 const {
+  isCollapsed,
   sidebarWidth,
   dragging,
   currentMode,
@@ -344,6 +346,81 @@ const {
   toggleSidebar,
   swipeHandlers,
 } = useListeningMode()
+
+// ========== 左右滑动切换底部 Tab ==========
+/** 触发切 Tab 的最小横向位移 */
+const TAB_SWIPE_DISTANCE = 60
+let tabStartX = 0
+let tabStartY = 0
+let tabSwiping = false
+
+/** 这些区域内的横向手势交给控件本身：进度条、弹层；侧栏展开时用于收起侧栏 */
+function blockTabSwipe(target: EventTarget | null) {
+  const el = target as HTMLElement | null
+  if (!el || !isCollapsed.value)
+    return true
+  return Boolean(el.closest('.van-slider, .van-popup, .van-overlay, input, textarea'))
+}
+
+function onTabTouchStart(event: TouchEvent) {
+  tabSwiping = false
+  if (event.touches.length !== 1 || blockTabSwipe(event.target))
+    return
+  tabStartX = event.touches[0].clientX
+  tabStartY = event.touches[0].clientY
+  tabSwiping = true
+}
+
+function onTabTouchMove(event: TouchEvent) {
+  if (!tabSwiping || event.touches.length !== 1)
+    return
+  const dx = event.touches[0].clientX - tabStartX
+  const dy = event.touches[0].clientY - tabStartY
+  // 竖向手势交给 Swiper / 列表滚动
+  if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 10)
+    tabSwiping = false
+}
+
+function onTabTouchEnd(event: TouchEvent) {
+  if (!tabSwiping)
+    return
+  tabSwiping = false
+  const touch = event.changedTouches[0]
+  if (!touch)
+    return
+  const dx = touch.clientX - tabStartX
+  const dy = touch.clientY - tabStartY
+  if (Math.abs(dx) < TAB_SWIPE_DISTANCE || Math.abs(dx) <= Math.abs(dy) * 1.2)
+    return
+  const tabs = navList.value.map(item => item.key)
+  const index = tabs.indexOf(currentTab.value)
+  if (index < 0)
+    return
+  // 左滑下一页、右滑上一页
+  const next = tabs[dx < 0 ? index + 1 : index - 1]
+  if (next)
+    navigate(next)
+}
+
+/** 布局层手势：侧栏开合 + 切换 Tab 共用同一组 touch 事件 */
+const layoutSwipeHandlers = {
+  touchstart: (event: TouchEvent) => {
+    swipeHandlers.touchstart(event)
+    onTabTouchStart(event)
+  },
+  touchmove: (event: TouchEvent) => {
+    swipeHandlers.touchmove(event)
+    onTabTouchMove(event)
+  },
+  touchend: (event: TouchEvent) => {
+    swipeHandlers.touchend()
+    onTabTouchEnd(event)
+  },
+  touchcancel: () => {
+    swipeHandlers.touchcancel()
+    tabSwiping = false
+  },
+}
 const { togglePlayback } = usePlaybackControl()
 
 /** 打开歌曲标签管理页（仅管理员可见入口，接口侧仍有权限校验） */
@@ -421,6 +498,24 @@ const switchingMode = ref(false)
 const playingPlaylist = computed(() =>
   player.queueSource?.type === 'playlist' ? player.queueSource.playlist : null,
 )
+
+/** 播放列表展示的队列来源：歌单名 / 听歌模式名 */
+const queueSourceText = computed(() => {
+  const source = player.queueSource
+  if (source?.type === 'playlist') {
+    // 从发现页打开的歌单标明来源，便于和「我的歌单」区分
+    return source.playlist.source === PlaylistSource.discover
+      ? `发现 · ${source.playlist.name}`
+      : source.playlist.name
+  }
+  if (source?.type === 'mode') {
+    // 默认模式首屏加载的就是最热榜单
+    return source.mode === 'default' ? '最热榜单' : currentModeName.value
+  }
+  if (source?.type === 'list')
+    return source.label
+  return ''
+})
 
 /** 队列来源不是听歌模式（播放歌单 / 搜索列表）时，取消模式的选中态 */
 watch(() => player.queueSource, (source) => {
@@ -742,7 +837,7 @@ async function handleShareLink() {
         showToast('分享的歌曲不存在')
         return
       }
-      player.setQueueSource(null)
+      player.setQueueSource({ type: 'list', label: '分享单曲' })
       await play(song, [song])
     } else if (shareType === 'playlist') {
       const item = await getPlaylistInfo(id)

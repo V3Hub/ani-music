@@ -57,8 +57,9 @@
 import type { PlaylistItem } from '@/types/music'
 import VipBadge from '@/components/common/VipBadge.vue'
 import { resolveDisplayName } from '@/utils/user-token'
+import { useSwipeDownClose } from '@/composables/useSwipeDownClose'
 import { useUserProfileStore } from '@/stores/userProfile'
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 
 const props = defineProps<{
   visible: boolean
@@ -90,68 +91,9 @@ const ownerName = computed(() => resolveDisplayName({
 const LOGO_URL = '/qs.svg'
 
 // ========== 下拉关闭 ==========
-const CLOSE_DISTANCE = 80
-const dragY = ref(0)
-const dragging = ref(false)
-let startY = 0
-
-const dragStyle = computed(() => ({
-  transform: `translate3d(0, ${dragY.value}px, 0)`,
-  transition: dragging.value ? 'none' : 'transform 0.22s cubic-bezier(0.25, 0.8, 0.35, 1)',
-}))
-
-function onDragStart(event: TouchEvent) {
-  const touch = event.touches[0]
-  if (!touch)
-    return
-  startY = touch.clientY
-  dragY.value = 0
-  dragging.value = true
-}
-
-function onDragMove(event: TouchEvent) {
-  if (!dragging.value)
-    return
-  const touch = event.touches[0]
-  if (!touch)
-    return
-  const dy = touch.clientY - startY
-  dragY.value = Math.max(0, dy)
-  if (dy > 0 && event.cancelable)
-    event.preventDefault()
-}
-
-function onDragEnd() {
-  if (!dragging.value)
-    return
-  if (dragY.value >= CLOSE_DISTANCE) {
-    // 保持拖出位置直接关闭，避免先回弹再关闭的抖动
-    emit('update:visible', false)
-    return
-  }
-  dragging.value = false
-  dragY.value = 0
-}
-
-function onDragCancel() {
-  dragging.value = false
-  dragY.value = 0
-}
-
-/** 关闭动画结束后复位位移：无过渡瞬间归零，避免下次打开残留偏移 */
-function resetDrag() {
-  dragY.value = 0
-  requestAnimationFrame(() => {
-    dragging.value = false
-  })
-}
-
-const dragHandlers = {
-  touchstart: onDragStart,
-  touchmove: onDragMove,
-  touchend: onDragEnd,
-  touchcancel: onDragCancel,
-}
+const { dragStyle, handlers: dragHandlers, reset: resetDrag } = useSwipeDownClose({
+  onClose: () => emit('update:visible', false),
+})
 </script>
 
 <style lang="scss" scoped>
@@ -170,11 +112,13 @@ const dragHandlers = {
 }
 
 .sheet-handle {
-  width: 36px;
+  width: 40px;
   height: 4px;
   margin: 0 auto 12px;
-  border-radius: 2px;
-  background: rgba(128, 128, 128, 0.45);
+  border-radius: 999px;
+  /* 跟随主题文字色：深浅背景下都清晰可见 */
+  background: currentColor;
+  opacity: 0.3;
 }
 
 .sheet-head {

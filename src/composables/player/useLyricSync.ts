@@ -92,7 +92,7 @@ export function useLyricSync() {
     }
   })
 
-  /** 当前行滚动到容器顶部（末行受最大滚动距离限制，添加底部留白后也能贴顶） */
+  /** 当前行滚动到容器顶部：容器刚好容纳两行，下方始终显示完整的一行 */
   watch(currentLine, async (index) => {
     const song = player.currentSong
     if (!song || index < 0)

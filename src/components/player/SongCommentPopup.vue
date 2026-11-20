@@ -5,12 +5,12 @@
     round
     teleport="body"
     class="comment-popup"
-    @closed="mainDrag.reset"
+    @closed="resetDrag"
   >
-    <div class="comment-wrap" :style="mainDrag.style.value">
+    <div class="comment-wrap" :style="dragStyle">
       <header
         class="comment-head"
-        v-on="mainDrag.handlers"
+        v-on="dragHandlers"
         @click="onHeaderClick"
       >
         <span class="grab" />
@@ -178,8 +178,9 @@ import { resolveDisplayName } from '@/utils/user-token'
 import { useUserProfileStore } from '@/stores/userProfile'
 import { resolveAvatarOrDefault } from '@/utils/avatar'
 import VipBadge from '@/components/common/VipBadge.vue'
+import { useSwipeDownClose } from '@/composables/useSwipeDownClose'
 import { showToast } from 'vant'
-import { computed, nextTick, ref, watch } from 'vue'
+import { nextTick, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 interface CommentNode extends SongComment {
@@ -417,80 +418,16 @@ watch([() => visible.value, () => props.song?.id], ([show]) => {
   }
 })
 
-// ========== 下拉关闭：头部/拖拽条拖动，避免和评论列表滚动冲突 ==========
-const CLOSE_DISTANCE = 80
-
-function createDragClose(onClose: () => void) {
-  const dragY = ref(0)
-  const dragging = ref(false)
-  let startY = 0
-  /** 本次交互是否发生了拖动：拖动松手后的 click 不当作“点击关闭” */
-  let dragged = false
-
-  /** 关闭动画结束后复位位移：无过渡瞬间归零，避免下次打开残留偏移 */
-  function reset() {
-    dragY.value = 0
-    requestAnimationFrame(() => {
-      dragging.value = false
-    })
-  }
-
-  return {
-    style: computed(() => ({
-      transform: `translate3d(0, ${dragY.value}px, 0)`,
-      transition: dragging.value ? 'none' : 'transform 0.22s cubic-bezier(0.25, 0.8, 0.35, 1)',
-    })),
-    handlers: {
-      touchstart(event: TouchEvent) {
-        const touch = event.touches[0]
-        if (!touch)
-          return
-        startY = touch.clientY
-        dragY.value = 0
-        dragged = false
-        dragging.value = true
-      },
-      touchmove(event: TouchEvent) {
-        if (!dragging.value)
-          return
-        const touch = event.touches[0]
-        if (!touch)
-          return
-        const dy = touch.clientY - startY
-        dragY.value = Math.max(0, dy)
-        if (dragY.value > 6)
-          dragged = true
-        // 向下拖动时阻止页面级滚动，跟手更顺
-        if (dy > 0 && event.cancelable)
-          event.preventDefault()
-      },
-      touchend() {
-        if (dragging.value && dragY.value >= CLOSE_DISTANCE) {
-          // 保持拖出位置直接关闭，让弹层顺势继续下滑，避免先回弹再关闭的抖动
-          onClose()
-          return
-        }
-        dragging.value = false
-        dragY.value = 0
-      },
-      touchcancel() {
-        dragging.value = false
-        dragY.value = 0
-      },
-    },
-    reset,
-    /** 上一次按下后是否发生了拖动（用于避免拖动结束误触发点击关闭） */
-    wasDragged: () => dragged,
-  }
-}
-
-const mainDrag = createDragClose(() => {
-  visible.value = false
+// ========== 下拉关闭：头部拖动，避免和评论列表滚动冲突 ==========
+const { dragStyle, handlers: dragHandlers, reset: resetDrag, wasDragged } = useSwipeDownClose({
+  onClose: () => {
+    visible.value = false
+  },
 })
 
 /** 点击顶部标题栏关闭：电脑端没有触摸手势时也能关掉弹层 */
 function onHeaderClick() {
-  if (mainDrag.wasDragged())
+  if (wasDragged())
     return
   visible.value = false
 }
@@ -530,11 +467,13 @@ function onHeaderClick() {
   position: absolute;
   top: 7px;
   left: 50%;
-  width: 34px;
+  width: 40px;
   height: 4px;
-  margin-left: -17px;
-  border-radius: 2px;
-  background: rgba(255, 255, 255, 0.28);
+  margin-left: -20px;
+  border-radius: 999px;
+  /* 跟随主题文字色：深浅背景下都清晰可见 */
+  background: currentColor;
+  opacity: 0.3;
 }
 
 .head-title {

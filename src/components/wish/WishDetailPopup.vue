@@ -412,11 +412,13 @@ async function sendMessage() {
   position: absolute;
   top: 7px;
   left: 50%;
-  width: 34px;
+  width: 40px;
   height: 4px;
-  margin-left: -17px;
-  border-radius: 2px;
-  background: rgba(255, 255, 255, 0.28);
+  margin-left: -20px;
+  border-radius: 999px;
+  /* 跟随主题文字色：深浅背景下都清晰可见 */
+  background: currentColor;
+  opacity: 0.3;
 }
 
 .detail-title {
