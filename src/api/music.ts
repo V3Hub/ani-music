@@ -219,13 +219,36 @@ export async function removeSongFromPlaylist(id: number, playlistId: number): Pr
   }
 }
 
-/** 播放失败后把歌曲降到歌单末尾，失败不影响播放流程 */
-export async function demoteSongInPlaylist(id: number | string, playlistId: number): Promise<void> {
+/** 播放失败后把歌曲降到歌单末尾，返回降序后的 sort 值供后续恢复时做乐观锁校验 */
+export async function demoteSongInPlaylist(id: number | string, playlistId: number): Promise<number | null> {
   try {
-    await request.post('/api/playlist/demote-song', { id, playlistId })
+    const res = await request.post<{ demotedSort: number }>('/api/playlist/demote-song', { id, playlistId })
+    return res?.demotedSort ?? null
   } catch {
     // 静默失败：降序只是体验优化
+    return null
   }
+}
+
+/** 播放成功后恢复被降序歌曲的原始排序位置，expectedSort 为乐观锁（不传则退化为无条件恢复） */
+export async function promoteSongInPlaylist(
+  id: number | string,
+  playlistId: number,
+  expectedSort?: number,
+): Promise<void> {
+  try {
+    await request.post('/api/playlist/promote-song', { id, playlistId, expectedSort })
+  } catch {
+    // 静默失败：恢复排序只是体验优化
+  }
+}
+
+/** 歌单拥有者手动调整歌曲顺序，list 为调整后的完整歌曲数组 */
+export async function sortPlaylistSongs(playlistId: number, list: Song[]): Promise<void> {
+  await request.post('/api/playlist/sort-song', {
+    playlistId,
+    list: list.map(song => ({ id: song.id })),
+  })
 }
 
 export async function deletePlaylist(id: number): Promise<boolean> {

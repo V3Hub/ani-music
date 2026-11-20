@@ -4,7 +4,7 @@
     position="right"
     class="song-list-popup"
     :style="{ width: '100%', height: '100%' }"
-    @closed="reset"
+    @closed="onClosed"
   >
     <div class="song-list" :style="swipeStyle" v-on="handlers">
       <div class="detail-header">
@@ -44,23 +44,34 @@
           <span v-if="activePlaylist?.desc" class="playlist-desc">{{ activePlaylist.desc }}</span>
         </div>
 
-        <div class="play-all" :class="{ 'is-disabled': !activeSongs.length }" @click="onPlayAll">
+        <div v-if="!sorting" class="play-all" :class="{ 'is-disabled': !activeSongs.length }" @click="onPlayAll">
           <div class="play-btn">
             <van-icon name="play" size="16" />
           </div>
           <span>播放全部 {{ activeSongs.length }}</span>
+          <span v-if="canSort" class="sort-entry" @click.stop="enterSort">排序</span>
+        </div>
+        <div v-else class="play-all sort-mode-bar">
+          <span class="sort-tip">拖动右侧手柄调整顺序</span>
+          <div class="sort-actions">
+            <span class="sort-btn" @click="cancelSort">取消</span>
+            <span class="sort-btn sort-confirm" :class="{ 'is-disabled': saving }" @click="saveSort">
+              {{ saving ? '保存中…' : '完成' }}
+            </span>
+          </div>
         </div>
 
         <div class="song-rows">
           <div
-            v-for="(item, index) in activeSongs"
+            v-for="(item, index) in displaySongs"
             :key="item.id"
             class="song-row"
-            :class="{ 'is-current': item.id === currentSong?.id }"
-            @click="playSongList(item.id)"
+            :class="{ 'is-current': item.id === currentSong?.id, 'is-dragging': index === draggingIndex }"
+            :style="index === draggingIndex ? { transform: `translateY(${dragY}px)` } : undefined"
+            @click="onRowClick(item.id)"
           >
             <div class="row-index">
-              <WaveBox v-if="currentSong?.id === item.id" :playing="isPlaying" />
+              <WaveBox v-if="!sorting && currentSong?.id === item.id" :playing="isPlaying" />
               <span v-else class="index-num">{{ index + 1 }}</span>
             </div>
             <div class="row-main">
@@ -71,7 +82,14 @@
                 {{ item.singer }}<template v-if="item.album"> · {{ item.album }}</template>
               </div>
             </div>
-            <van-icon name="ellipsis" size="18" class="row-more" @click.stop="emit('more', item)" />
+            <van-icon
+              v-if="sorting"
+              name="bars"
+              size="18"
+              class="drag-handle"
+              @touchstart="onDragStart($event, index)"
+            />
+            <van-icon v-else name="ellipsis" size="18" class="row-more" @click.stop="emit('more', item)" />
           </div>
         </div>
       </div>
@@ -99,7 +117,7 @@ import { usePlayerStore } from '@/stores/player'
 import PlaylistActionSheet from '@/components/playlist/PlaylistActionSheet.vue'
 import VipBadge from '@/components/common/VipBadge.vue'
 import WaveBox from '@/components/waveBox/WaveBox.vue'
-import { getPlaylistShareCount } from '@/api/music'
+import { getPlaylistShareCount, sortPlaylistSongs } from '@/api/music'
 import { sharePlaylist } from '@/utils/share'
 import { resolveAvatarOrDefault } from '@/utils/avatar'
 import { resolveDisplayName } from '@/utils/user-token'
@@ -119,6 +137,7 @@ const emit = defineEmits<{
   (e: 'deletePlaylist', id: number): void
   (e: 'addSubPlaylist', id: number): void
   (e: 'removeSubPlaylist', id: number): void
+  (e: 'sorted', songs: Song[]): void
 }>()
 
 const player = usePlayerStore()
@@ -176,7 +195,7 @@ function onPlaylistAction(val: string) {
 }
 
 function onPlayAll() {
-  if (!props.activeSongs.length)
+  if (sorting.value || !props.activeSongs.length)
     return
   playSongList()
 }
@@ -196,12 +215,115 @@ async function playSongList(id?: string | number) {
   visible.value = false
 }
 
+function onRowClick(id: string | number) {
+  if (sorting.value)
+    return
+  playSongList(id)
+}
+
+// ========== 拥有者排序模式 ==========
+const sorting = ref(false)
+const saving = ref(false)
+/** 排序模式下的本地副本，保存成功后才同步给父组件 */
+const localSongs = ref<Song[]>([])
+const displaySongs = computed(() => sorting.value ? localSongs.value : props.activeSongs)
+
+/** 仅真实歌单的拥有者可排序：本地虚拟歌单（我喜欢的/历史播放）没有后端排序概念 */
+const canSort = computed(() => {
+  const p = props.activePlaylist
+  return props.isOwner && !!p?.id
+    && (p.source === PlaylistSource.playlist || p.source === PlaylistSource.discover)
+    && props.activeSongs.length > 1
+})
+
+function enterSort() {
+  localSongs.value = [...props.activeSongs]
+  sorting.value = true
+}
+
+function cancelSort() {
+  sorting.value = false
+}
+
+async function saveSort() {
+  if (saving.value)
+    return
+  const playlistId = props.activePlaylist?.id
+  if (!playlistId)
+    return
+  saving.value = true
+  try {
+    await sortPlaylistSongs(playlistId, localSongs.value)
+    emit('sorted', [...localSongs.value])
+    sorting.value = false
+  } catch {
+    // request 已统一提示，停留在排序模式允许重试或取消
+  } finally {
+    saving.value = false
+  }
+}
+
+// ---- 拖拽排序：手柄按下后跟踪手指，越过半行就与邻项交换 ----
+const draggingIndex = ref(-1)
+const dragY = ref(0)
+let dragStartY = 0
+let rowHeight = 0
+
+function onDragStart(event: TouchEvent, index: number) {
+  if (saving.value)
+    return
+  const handle = event.currentTarget as HTMLElement
+  const row = handle.closest('.song-row') as HTMLElement | null
+  rowHeight = row?.offsetHeight || 64
+  draggingIndex.value = index
+  dragStartY = event.touches[0].clientY
+  dragY.value = 0
+  window.addEventListener('touchmove', onDragMove, { passive: false })
+  window.addEventListener('touchend', onDragEnd)
+  window.addEventListener('touchcancel', onDragEnd)
+}
+
+function onDragMove(event: TouchEvent) {
+  event.preventDefault()
+  const list = localSongs.value
+  const index = draggingIndex.value
+  if (index < 0)
+    return
+  const dy = event.touches[0].clientY - dragStartY
+  // 向下越过半行：与下一项交换，基准点随之下移一行
+  if (dy > rowHeight / 2 && index < list.length - 1) {
+    list.splice(index, 2, list[index + 1], list[index])
+    draggingIndex.value = index + 1
+    dragStartY += rowHeight
+  } else if (dy < -rowHeight / 2 && index > 0) {
+    list.splice(index - 1, 2, list[index], list[index - 1])
+    draggingIndex.value = index - 1
+    dragStartY -= rowHeight
+  }
+  dragY.value = event.touches[0].clientY - dragStartY
+}
+
+function onDragEnd() {
+  draggingIndex.value = -1
+  dragY.value = 0
+  window.removeEventListener('touchmove', onDragMove)
+  window.removeEventListener('touchend', onDragEnd)
+  window.removeEventListener('touchcancel', onDragEnd)
+}
+
 // ========== 右滑关闭 ==========
 const { swipeStyle, handlers, reset } = useSwipeClose(() => {
   if (playlistActionVisible.value)
     return
   visible.value = false
 })
+
+function onClosed() {
+  onDragEnd()
+  sorting.value = false
+  saving.value = false
+  reset()
+}
 </script>
 
 <style scoped lang="scss">
@@ -332,6 +454,46 @@ const { swipeStyle, handlers, reset } = useSwipeClose(() => {
     color: var(--theme-background, #1a1a1a);
     background: var(--theme-text, #fff);
   }
+
+  .sort-entry {
+    margin-left: auto;
+    padding: 6px 14px;
+    border-radius: 999px;
+    background: rgba(128, 128, 128, 0.18);
+    cursor: pointer;
+  }
+
+  &.sort-mode-bar {
+    justify-content: space-between;
+    min-height: 40px;
+    cursor: default;
+  }
+
+  .sort-tip {
+    opacity: 0.6;
+  }
+
+  .sort-actions {
+    display: flex;
+    gap: 10px;
+  }
+
+  .sort-btn {
+    padding: 6px 14px;
+    border-radius: 999px;
+    background: rgba(128, 128, 128, 0.18);
+    cursor: pointer;
+
+    &.sort-confirm {
+      color: var(--theme-background, #1a1a1a);
+      background: var(--theme-text, #fff);
+    }
+
+    &.is-disabled {
+      opacity: 0.5;
+      pointer-events: none;
+    }
+  }
 }
 
 .song-rows {
@@ -348,6 +510,22 @@ const { swipeStyle, handlers, reset } = useSwipeClose(() => {
 
   &.is-current .row-title {
     color: #35c46a;
+  }
+
+  &.is-dragging {
+    position: relative;
+    z-index: 2;
+    background: var(--popup-bg);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+  }
+
+  .drag-handle {
+    flex-shrink: 0;
+    padding: 8px 4px;
+    color: var(--theme-text, #fff);
+    opacity: 0.65;
+    cursor: grab;
+    touch-action: none;
   }
 
   .row-index {

@@ -260,6 +260,7 @@ const ROUTES = {
   '/api/playlist/add-song': { POST: handleAddPlaylistSong },
   '/api/playlist/sort-song': { POST: handleSortPlaylistSongs },
   '/api/playlist/demote-song': { POST: handleDemotePlaylistSong },
+  '/api/playlist/promote-song': { POST: handlePromotePlaylistSong },
   '/api/playlist/remove-song': { POST: handleRemovePlaylistSong },
   '/api/playlist/discover': { GET: handleGetDiscoverPlaylists },
   '/api/playlist/search': { GET: handleSearchPlaylists },
@@ -1829,30 +1830,73 @@ async function handleAddPlaylistSong(request, env) {
   return jsonResp({ code: 200, msg: '添加成功' })
 }
 
-/** 歌单歌曲排序 POST /api/playlist/sort-song：按数组顺序批量更新 sort */
+/** 歌单歌曲排序 POST /api/playlist/sort-song：仅歌单拥有者可用，按数组顺序批量更新 sort */
 async function handleSortPlaylistSongs(request, env) {
   const { playlistId, list } = await request.json()
   if (!playlistId || !Array.isArray(list)) return jsonResp({ code: 400, msg: '参数不全' })
   const DB = env.DB
-  const stmt = DB.prepare(`UPDATE playlist_song SET sort = ? WHERE id = ? AND playlist_id = ?`)
+  const userId = getRequestUserId(request)
+  const owner = await DB.prepare('SELECT user_id FROM user_playlist WHERE id = ?').bind(playlistId).first()
+  if (!owner) return jsonResp({ code: 404, msg: '歌单不存在' })
+  if (String(owner.user_id) !== String(userId))
+    return jsonResp({ code: 403, msg: '仅歌单拥有者可调整顺序' })
+  const stmt = DB.prepare(`UPDATE playlist_song SET sort = ? WHERE song_id = ? AND playlist_id = ?`)
   const batch = list.map((item, index) => stmt.bind(index + 1, item.id, playlistId))
+  // 拥有者手动整理顺序后，之前的播放失败降序标记全部作废，避免残留 original_sort 干扰后续降序/恢复
+  batch.push(DB.prepare('UPDATE playlist_song SET original_sort = NULL WHERE playlist_id = ?').bind(playlistId))
   await DB.batch(batch)
   return jsonResp({ code: 200, msg: '排序已更新' })
 }
 
-/** 歌单歌曲降序 POST /api/playlist/demote-song：播放失败的歌曲移到歌单末尾 */
+/** 歌单歌曲降序 POST /api/playlist/demote-song：播放失败的歌曲移到歌单末尾，返回新 sort 值供恢复时校验 */
 async function handleDemotePlaylistSong(request, env) {
   const { playlistId, id } = await request.json().catch(() => ({}))
   if (!playlistId || !id) return jsonResp({ code: 400, msg: '参数不全' })
   const DB = env.DB
   const row = await DB.prepare(
+    'SELECT sort FROM playlist_song WHERE playlist_id = ? AND song_id = ?',
+  ).bind(playlistId, id).first()
+  if (!row) return jsonResp({ code: 404, msg: '歌曲不在该歌单中' })
+  // 已经被降序过就不重复处理
+  if (row.original_sort != null) return jsonResp({ code: 200, msg: '已在末尾', data: { demotedSort: row.sort } })
+  const maxRow = await DB.prepare(
     'SELECT MAX(sort) AS maxSort FROM playlist_song WHERE playlist_id = ?',
   ).bind(playlistId).first()
-  const nextSort = (Number(row?.maxSort) || 0) + 1
-  await DB.prepare('UPDATE playlist_song SET sort = ? WHERE playlist_id = ? AND song_id = ?')
-    .bind(nextSort, playlistId, id)
-    .run()
-  return jsonResp({ code: 200, msg: '已降到末尾' })
+  const nextSort = (Number(maxRow?.maxSort) || 0) + 1
+  await DB.prepare(
+    'UPDATE playlist_song SET sort = ?, original_sort = ? WHERE playlist_id = ? AND song_id = ?',
+  ).bind(nextSort, row.sort, playlistId, id).run()
+  return jsonResp({ code: 200, msg: '已降到末尾', data: { demotedSort: nextSort } })
+}
+
+/**
+ * 歌单歌曲恢复排序 POST /api/playlist/promote-song：播放成功后恢复原始排序位置
+ * 可选传入 expectedSort（乐观锁），只有当前 sort 仍等于 expectedSort 才恢复，避免覆盖他人编辑
+ */
+async function handlePromotePlaylistSong(request, env) {
+  const { playlistId, id, expectedSort } = await request.json().catch(() => ({}))
+  if (!playlistId || !id) return jsonResp({ code: 400, msg: '参数不全' })
+  const DB = env.DB
+  // 带 expectedSort 时用它做条件更新：没人动过这首歌才恢复
+  if (expectedSort != null) {
+    const info = await DB.prepare(
+      `UPDATE playlist_song SET sort = original_sort, original_sort = NULL
+       WHERE playlist_id = ? AND song_id = ? AND original_sort IS NOT NULL AND sort = ?`,
+    ).bind(playlistId, id, expectedSort).run()
+    if (info.changes === 0)
+      return jsonResp({ code: 200, msg: '歌曲已被他人修改，跳过恢复' })
+    return jsonResp({ code: 200, msg: '已恢复排序' })
+  }
+  // 兼容旧客户端：不传 expectedSort 时仍允许恢复（退化逻辑）
+  const row = await DB.prepare(
+    'SELECT original_sort FROM playlist_song WHERE playlist_id = ? AND song_id = ?',
+  ).bind(playlistId, id).first()
+  if (!row || row.original_sort == null)
+    return jsonResp({ code: 200, msg: '无需恢复' })
+  await DB.prepare(
+    'UPDATE playlist_song SET sort = original_sort, original_sort = NULL WHERE playlist_id = ? AND song_id = ?',
+  ).bind(playlistId, id).run()
+  return jsonResp({ code: 200, msg: '已恢复排序' })
 }
 
 /** 歌单移除歌曲 POST /api/playlist/remove-song */

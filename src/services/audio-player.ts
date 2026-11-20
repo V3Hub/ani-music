@@ -8,7 +8,7 @@ import type { Song } from '@/types/music'
  *  - 进度、时长、播放状态由 audio 事件驱动，避免定时器漂移
  *  - 组件只与 Pinia store 响应式引用绑定，不直接操作 audio
  */
-import { addSongToPlayRecord, demoteSongInPlaylist, getRecommendList } from '@/api/music'
+import { addSongToPlayRecord, demoteSongInPlaylist, getRecommendList, promoteSongInPlaylist } from '@/api/music'
 import { reportSongDuration } from '@/services/song-meta-reporter'
 import { usePlayerStore } from '@/stores/player'
 import { watch } from 'vue'
@@ -22,6 +22,8 @@ let bound = false
 let failedCount = 0
 /** 用户是否发起过播放：未发起时加载失败不自动切歌，避免一进页面就狂跳 */
 let playRequested = false
+/** 被降序过的歌曲 id -> 降序时的 sort 值（乐观锁），播放成功后用它校验再恢复 */
+const demotedSongMap = new Map<number | string, number>()
 
 /** 播放器 store：在 initPlayerService() 中一次性赋值，之后全局直接使用 */
 let playerStore!: ReturnType<typeof usePlayerStore>
@@ -74,10 +76,11 @@ function bindEvents() {
     playerStore.setCanplay(false)
   })
 
-  // 真正出声、缓冲跟上：解除等待态，并清零「连续失败计数」
+  // 真正出声、缓冲跟上：解除等待态、清零连续失败计数，并尝试恢复被降序歌曲的排序
   audio.addEventListener('playing', () => {
     playerStore.setCanplay(true)
     failedCount = 0
+    promoteCurrentSong()
   })
 
   // 加载/解码失败（404、格式不支持、网络中断）：复位播放与拖动状态
@@ -185,7 +188,7 @@ async function loadNextModeBatch(mode: string) {
 }
 
 /** 当前歌曲播放失败时自动切到下一首，并把失败歌曲降到歌单末尾；整轮都失败则停止 */
-function autoNextOnError() {
+async function autoNextOnError() {
   const total = playerStore.playList.length
   if (total === 0)
     return
@@ -204,13 +207,29 @@ function autoNextOnError() {
 
   // 歌单来源时同步把失败歌曲降到歌单末尾（后端排序）
   const source = playerStore.queueSource
-  if (source?.type === 'playlist')
-    demoteSongInPlaylist(failedSong.id, source.playlist.id)
+  if (source?.type === 'playlist') {
+    const expectedSort = await demoteSongInPlaylist(failedSong.id, source.playlist.id)
+    if (expectedSort != null)
+      demotedSongMap.set(failedSong.id, expectedSort)
+  }
 
   // 关键：**不重排 playList**，只移动 currentIndex
   // 重排会触发 queueKey 变化导致 Swiper 重建，与 syncToCurrent 竞态造成封面/声音错位
   playerStore.setCurrentIndex(nextIdx)
   playCurrent().catch(() => {})
+}
+
+/** 当前歌曲播放成功（真正出声）时，若它之前被降序过则恢复原始排序位置（带乐观锁） */
+function promoteCurrentSong() {
+  const source = playerStore.queueSource
+  const song = playerStore.currentSong
+  if (!song || source?.type !== 'playlist')
+    return
+  const expectedSort = demotedSongMap.get(song.id)
+  if (expectedSort == null)
+    return
+  demotedSongMap.delete(song.id)
+  promoteSongInPlaylist(song.id, source.playlist.id, expectedSort)
 }
 
 // 确保事件只绑定一次（在应用启动时调用，必须早于其它导出方法）
@@ -340,6 +359,7 @@ export function seekByPercent(percent: number) {
 /** 销毁（SSR/卸载场景） */
 export function dispose() {
   playRequested = false
+  demotedSongMap.clear()
   audio.pause()
   audio.removeAttribute('src')
   audio.load()

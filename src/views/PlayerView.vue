@@ -38,6 +38,7 @@
 
       <OwnerPanel
         v-if="currentTab === 'owner'"
+        :class="tabEnterClass"
         :user-token="userToken"
         :logged-in="!!profileStore.username"
         :nickname="profileStore.nickname"
@@ -60,15 +61,16 @@
 
       <DiscoverPanel
         v-if="currentTab === 'discover'"
+        :class="tabEnterClass"
         :items="discoverPlaylists"
         :playing-playlist="playingPlaylist"
         :is-playing="player.isPlaying"
         @open="onOpenDiscover"
       />
 
-      <WelfarePanel v-if="currentTab === 'benefit'" />
+      <WelfarePanel v-if="currentTab === 'benefit'" :class="tabEnterClass" />
 
-      <WishPanel v-if="currentTab === 'wish'" />
+      <WishPanel v-if="currentTab === 'wish'" :class="tabEnterClass" />
 
       <div class="bottom-bar">
         <PlayerBottomNav
@@ -108,6 +110,7 @@
       @delete-playlist="deletePlaylist"
       @add-sub-playlist="savePlaylist"
       @remove-sub-playlist="removeSavedPlaylist"
+      @sorted="onSongsSorted"
     />
 
     <PlayerSettingsPopup
@@ -335,6 +338,15 @@ const { currentTab, navList, navigate } = usePlayerNavigation()
 watch(currentTab, (tab) => {
   sessionStorage.setItem(PLAYER_RETURN_TAB_KEY, tab)
 })
+
+/** Tab 切换方向：按底部导航顺序判断新页面从哪侧滑入 */
+const tabEnterClass = ref<'tab-enter-left' | 'tab-enter-right'>('tab-enter-left')
+watch(currentTab, (tab, prev) => {
+  const order = navList.value.map(item => item.key)
+  tabEnterClass.value = order.indexOf(tab) >= order.indexOf(prev)
+    ? 'tab-enter-left'
+    : 'tab-enter-right'
+})
 const {
   isCollapsed,
   sidebarWidth,
@@ -464,6 +476,11 @@ const activePlaylistSubscribed = computed(() => {
   const id = activePlaylist.value?.id
   return !!id && playlists.value.some(item => item.id === id)
 })
+
+/** 拥有者在歌单抽屉里手动排序成功后，同步本地歌曲顺序，避免重新拉取闪烁 */
+function onSongsSorted(list: Song[]) {
+  activeSongs.value = list
+}
 
 const {
   playMode,
@@ -918,6 +935,39 @@ async function handleShareLink() {
   .player-main :deep(.van-tabbar),
   .player-main :deep(.player-bottom-nav) {
     pointer-events: auto;
+  }
+
+  // Tab 切换：仅给新页面加入场滑动，不改变原有布局
+  .tab-enter-left {
+    animation: tab-in-from-right 0.26s cubic-bezier(0.22, 0.7, 0.3, 1);
+  }
+
+  .tab-enter-right {
+    animation: tab-in-from-left 0.26s cubic-bezier(0.22, 0.7, 0.3, 1);
+  }
+
+  @keyframes tab-in-from-right {
+    from {
+      opacity: 0;
+      transform: translate3d(28%, 0, 0);
+    }
+
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes tab-in-from-left {
+    from {
+      opacity: 0;
+      transform: translate3d(-28%, 0, 0);
+    }
+
+    to {
+      opacity: 1;
+      transform: none;
+    }
   }
 
   .bottom-bar {

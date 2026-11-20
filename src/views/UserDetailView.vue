@@ -22,9 +22,6 @@
             <h1>{{ name }}</h1>
             <VipBadge :level="profile.vipLevel" />
           </div>
-          <p class="uid">
-            UID {{ profile.id }}
-          </p>
 
           <div class="stats">
             <div class="stat-item">
@@ -276,12 +273,6 @@ watch(userId, () => {
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.uid {
-  margin: 0;
-  font-size: 12px;
-  opacity: 0.45;
 }
 
 .stats {
