@@ -16,6 +16,13 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.1.10',
+    date: '2026-11-20',
+    items: [
+      { type: 'feat', text: '播放失败歌曲排序恢复、歌单拥有者手动排序与底部 Tab 切换动画' },
+    ],
+  },
+  {
     version: '0.1.9',
     date: '2026-11-20',
     items: [
