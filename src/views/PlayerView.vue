@@ -804,7 +804,7 @@ async function handleShareLink() {
     flex-direction: column;
     position: relative;
     overflow: hidden;
-    padding-top: var(--safe-top, 0px);
+    padding-top: 0;
     box-sizing: border-box;
     pointer-events: none;
   }
@@ -829,13 +829,7 @@ async function handleShareLink() {
     flex-shrink: 0;
     position: relative;
     z-index: 200;
-    padding-bottom: var(--safe-bottom, 0px);
     pointer-events: auto;
-
-    // 电脑端：底部工具栏与屏幕底边留出呼吸空间
-    @media (min-width: 768px) {
-      padding-bottom: calc(var(--safe-bottom, 0px) + 18px);
-    }
   }
 }
 </style>

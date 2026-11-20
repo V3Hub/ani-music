@@ -191,7 +191,7 @@ watch([() => props.visible, () => props.song?.id], ([visible]) => {
 }
 
 .tag-popup {
-  padding: 16px 16px calc(14px + env(safe-area-inset-bottom));
+  padding: 16px 16px 14px;
   color: var(--theme-text, #fff);
 }
 

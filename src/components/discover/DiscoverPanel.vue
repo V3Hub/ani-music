@@ -102,7 +102,7 @@ onBeforeUnmount(() => {
 .discover-panel {
   flex: 1;
   min-height: 0;
-  padding: 12px 16px calc(24px + env(safe-area-inset-bottom));
+  padding: 0 16px;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   color: var(--theme-text, #fff);

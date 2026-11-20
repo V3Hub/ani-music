@@ -6,8 +6,11 @@
     teleport="body"
     class="song-action-popup"
     @update:show="emit('update:visible', $event)"
+    @closed="resetDrag"
   >
-    <div class="song-action-sheet">
+    <div class="song-action-sheet" :style="dragStyle" v-on="dragHandlers">
+      <div class="sheet-handle" />
+
       <div v-if="song" class="song-head">
         <van-image width="56" height="56" radius="8" fit="cover" :src="song.pic || LOGO_URL">
           <template #error>
@@ -82,6 +85,7 @@
 
 <script setup lang="ts">
 import type { Song } from '@/types/music'
+import { computed, ref } from 'vue'
 
 defineProps<{
   visible: boolean
@@ -100,16 +104,93 @@ const emit = defineEmits<{
 }>()
 
 const LOGO_URL = '/qs.svg'
+
+// ========== 下拉关闭 ==========
+const CLOSE_DISTANCE = 80
+const dragY = ref(0)
+const dragging = ref(false)
+let startY = 0
+
+const dragStyle = computed(() => ({
+  transform: `translate3d(0, ${dragY.value}px, 0)`,
+  transition: dragging.value ? 'none' : 'transform 0.22s cubic-bezier(0.25, 0.8, 0.35, 1)',
+}))
+
+function onDragStart(event: TouchEvent) {
+  const touch = event.touches[0]
+  if (!touch)
+    return
+  startY = touch.clientY
+  dragY.value = 0
+  dragging.value = true
+}
+
+function onDragMove(event: TouchEvent) {
+  if (!dragging.value)
+    return
+  const touch = event.touches[0]
+  if (!touch)
+    return
+  const dy = touch.clientY - startY
+  dragY.value = Math.max(0, dy)
+  if (dy > 0 && event.cancelable)
+    event.preventDefault()
+}
+
+function onDragEnd() {
+  if (!dragging.value)
+    return
+  if (dragY.value >= CLOSE_DISTANCE) {
+    // 保持拖出位置直接关闭，避免先回弹再关闭的抖动
+    emit('update:visible', false)
+    return
+  }
+  dragging.value = false
+  dragY.value = 0
+}
+
+function onDragCancel() {
+  dragging.value = false
+  dragY.value = 0
+}
+
+/** 关闭动画结束后复位位移：无过渡瞬间归零，避免下次打开残留偏移 */
+function resetDrag() {
+  dragY.value = 0
+  requestAnimationFrame(() => {
+    dragging.value = false
+  })
+}
+
+const dragHandlers = {
+  touchstart: onDragStart,
+  touchmove: onDragMove,
+  touchend: onDragEnd,
+  touchcancel: onDragCancel,
+}
 </script>
 
 <style lang="scss" scoped>
 .song-action-popup {
-  background: var(--popup-bg-raised) !important;
+  // 背景交给内容层：下拉拖动时背景跟内容一起移动
+  background: transparent !important;
 }
 
 .song-action-sheet {
-  padding: 12px 20px calc(20px + env(safe-area-inset-bottom));
+  padding: 12px 20px 20px;
   color: var(--theme-text, #fff);
+  background: var(--popup-bg-raised);
+  border-radius: inherit;
+  touch-action: none;
+  will-change: transform;
+}
+
+.sheet-handle {
+  width: 36px;
+  height: 4px;
+  margin: 0 auto 12px;
+  border-radius: 2px;
+  background: rgba(128, 128, 128, 0.45);
 }
 
 .song-head {

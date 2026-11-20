@@ -222,7 +222,7 @@ const { swipeStyle, handlers, reset } = useSwipeClose(() => {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: calc(14px + env(safe-area-inset-top)) 20px 4px;
+    padding: 14px 20px 4px;
 
     .header-icon {
       color: var(--theme-text, #fff);

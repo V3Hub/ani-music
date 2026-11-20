@@ -145,7 +145,7 @@ function goBack() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: calc(10px + env(safe-area-inset-top)) 14px 0;
+  padding: 0 14px;
 
   .back-btn,
   .header-space {
@@ -179,7 +179,7 @@ function goBack() {
   flex: 1;
   flex-direction: column;
   gap: 14px;
-  padding: 24px 24px calc(36px + env(safe-area-inset-bottom));
+  padding: 24px 24px 36px;
   overflow-y: auto;
 }
 

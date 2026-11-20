@@ -124,7 +124,7 @@ const { swipeStyle, handlers, reset } = useSwipeClose(closeSearch)
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: calc(12px + env(safe-area-inset-top)) 16px 12px;
+  padding: 12px 16px 12px;
 
   .search-input-wrap {
     flex: 1;
@@ -220,7 +220,7 @@ const { swipeStyle, handlers, reset } = useSwipeClose(closeSearch)
 .song-list {
   list-style: none;
   margin: 0;
-  padding: 4px 8px calc(24px + env(safe-area-inset-bottom));
+  padding: 4px 8px 24px;
 }
 
 .song-row {

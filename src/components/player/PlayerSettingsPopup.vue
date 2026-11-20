@@ -87,7 +87,10 @@
               </span>
             </li>
             <li class="section-item" @click="emit('about')">
-              <span class="item-label">关于</span>
+              <span class="item-label">
+                关于
+                <span v-if="hasUpdate" class="update-dot" />
+              </span>
               <span class="item-value">
                 <van-icon name="arrow" size="14" class="item-arrow" />
               </span>
@@ -176,7 +179,7 @@ import { useSwipeClose } from '@/composables/useSwipeClose'
 import { resolveAvatarOrDefault } from '@/utils/avatar'
 import { detectMobilePlatform, downloadWebClipProfile } from '@/utils/lite-app'
 import { showConfirmDialog, showToast } from 'vant'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 const props = defineProps<{
   sourceLabel: string
@@ -227,6 +230,20 @@ async function onDownloadApp() {
 const visible = defineModel<boolean>('visible', { required: true })
 const pickerVisible = defineModel<boolean>('pickerVisible', { required: true })
 const sleepVisible = defineModel<boolean>('sleepVisible', { required: true, default: () => false })
+
+/** 「关于」入口的更新角标：当前版本与上次查看的版本不一致时显示 */
+const LAST_SEEN_VERSION_KEY = 'ani.last_seen_version'
+const hasUpdate = ref(false)
+function refreshUpdateDot() {
+  const current = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : ''
+  const lastSeen = localStorage.getItem(LAST_SEEN_VERSION_KEY)
+  hasUpdate.value = Boolean(current && lastSeen && lastSeen !== current)
+}
+// 每次打开设置都重新比对，用户看完关于页后角标会消失
+watch(visible, (show) => {
+  if (show)
+    refreshUpdateDot()
+})
 const switchVisible = ref(false)
 
 const { swipeStyle, handlers, reset } = useSwipeClose(() => {
@@ -301,7 +318,7 @@ function onPickSleep(minutes: number) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: calc(14px + env(safe-area-inset-top)) 20px 14px;
+  padding: 14px 20px 14px;
   border-bottom: 1px solid rgba(128, 128, 128, 0.18);
 
   .header-title {
@@ -360,7 +377,18 @@ function onPickSleep(minutes: number) {
   }
 
   .item-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     font-size: 15px;
+  }
+
+  /* 有新版本未查看时，「关于」旁的红色角标 */
+  .update-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #ff5c7c;
   }
 
   .item-danger {
@@ -386,7 +414,7 @@ function onPickSleep(minutes: number) {
 
 /** 播放源选择 bottom sheet */
 .source-sheet {
-  padding: 4px 20px calc(20px + env(safe-area-inset-bottom));
+  padding: 4px 20px 20px;
   color: var(--theme-text, #fff);
   background: var(--popup-bg-raised);
 
@@ -429,7 +457,7 @@ function onPickSleep(minutes: number) {
 
 /** 切换账号 bottom sheet */
 .switch-sheet {
-  padding: 4px 20px calc(20px + env(safe-area-inset-bottom));
+  padding: 4px 20px 20px;
   color: var(--theme-text, #fff);
   background: var(--popup-bg-raised);
 
@@ -534,7 +562,7 @@ function onPickSleep(minutes: number) {
 
 /** 定时关闭 bottom sheet */
 .sleep-sheet {
-  padding: 4px 20px calc(20px + env(safe-area-inset-bottom));
+  padding: 4px 20px 20px;
   color: var(--theme-text, #fff);
   background: var(--popup-bg-raised);
 

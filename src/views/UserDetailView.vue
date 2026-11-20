@@ -81,16 +81,19 @@
         用户信息加载失败
       </p>
     </main>
+
+    <ImageViewer v-model:visible="avatarPreviewVisible" :src="avatarSrc" />
   </div>
 </template>
 
 <script setup lang="ts">
 import type { PublicUserProfile } from '@/api/user'
 import { getPublicUserProfile, sendUserMessage } from '@/api/user'
+import ImageViewer from '@/components/common/ImageViewer.vue'
 import VipBadge from '@/components/common/VipBadge.vue'
 import { resolveAvatarOrDefault } from '@/utils/avatar'
 import { resolveDisplayName } from '@/utils/user-token'
-import { showImagePreview, showToast } from 'vant'
+import { showToast } from 'vant'
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -101,6 +104,7 @@ const profile = ref<PublicUserProfile | null>(null)
 const loading = ref(true)
 const draft = ref('')
 const sending = ref(false)
+const avatarPreviewVisible = ref(false)
 
 const userId = computed(() => String(route.params.id ?? ''))
 const name = computed(() => resolveDisplayName({
@@ -127,7 +131,7 @@ async function load() {
 
 function previewAvatar() {
   if (avatarSrc.value)
-    showImagePreview([avatarSrc.value])
+    avatarPreviewVisible.value = true
 }
 
 async function submit() {
@@ -182,7 +186,7 @@ watch(userId, () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: calc(10px + env(safe-area-inset-top)) 14px 0;
+  padding: 0 14px;
 }
 
 .user-header .back-btn,
@@ -216,7 +220,7 @@ watch(userId, () => {
   flex: 1;
   flex-direction: column;
   gap: 14px;
-  padding: 24px 24px calc(36px + env(safe-area-inset-bottom));
+  padding: 24px 24px 36px;
   overflow-y: auto;
 }
 

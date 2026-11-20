@@ -1,6 +1,5 @@
 import { createPinia } from 'pinia'
 import { createApp } from 'vue'
-import { showToast } from 'vant'
 import App from './App.vue'
 import router from './router'
 import { initPlayerService } from './services/audio-player'
@@ -9,8 +8,6 @@ import { ensureAutoToken } from './api/user'
 import 'virtual:uno.css'
 import 'vant/lib/index.css'
 import './styles/main.scss'
-
-const LAST_SEEN_VERSION_KEY = 'ani.last_seen_version'
 
 // 描述文件（Web Clip）安装后以独立模式启动，单独为顶部状态栏留白
 const standalone = (navigator as Navigator & { standalone?: boolean }).standalone === true
@@ -40,21 +37,6 @@ async function bootstrap() {
     await ensureAutoToken().catch(() => null)
 
     app.mount('#app')
-
-    // 版本变更提示：对比 localStorage 保存的上次版本与当前构建版本，
-    // 不同则弹出一次轻提示，引导用户到关于页看 changelog
-    const currentVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : ''
-    if (currentVersion) {
-      const lastSeen = localStorage.getItem(LAST_SEEN_VERSION_KEY)
-      if (lastSeen && lastSeen !== currentVersion) {
-        showToast({
-          type: 'success',
-          message: `已更新到 v${currentVersion}，关于页查看更新内容`,
-          duration: 2800,
-        })
-      }
-      localStorage.setItem(LAST_SEEN_VERSION_KEY, currentVersion)
-    }
   } catch (err) {
     console.error('[bootstrap] 应用启动失败', err)
   } finally {

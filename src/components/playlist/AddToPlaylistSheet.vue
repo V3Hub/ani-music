@@ -81,11 +81,12 @@ const LOGO_URL = '/qs.svg'
 
 <style lang="scss" scoped>
 .add-to-playlist-popup {
-  background: var(--popup-bg-raised) !important;
+  /* 三级弹层：比歌曲操作弹层再亮一层，避免两层背景一样分不清 */
+  background: var(--popup-bg-elevated) !important;
 }
 
 .add-to-playlist {
-  padding: 4px 20px calc(20px + env(safe-area-inset-bottom));
+  padding: 4px 20px 20px;
   color: var(--theme-text, #fff);
 }
 

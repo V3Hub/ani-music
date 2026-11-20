@@ -292,7 +292,7 @@ function formatTime(value: string) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: calc(10px + env(safe-area-inset-top)) 14px 0;
+  padding: 0 14px;
 
   .back-btn,
   .header-space {
@@ -324,7 +324,7 @@ function formatTime(value: string) {
   flex: 1;
   flex-direction: column;
   gap: 16px;
-  padding: 18px 24px calc(30px + env(safe-area-inset-bottom));
+  padding: 18px 24px 30px;
   overflow-y: auto;
 }
 

@@ -161,7 +161,7 @@ const dragHandlers = {
 }
 
 .playlist-action-sheet {
-  padding: 8px 20px calc(20px + env(safe-area-inset-bottom));
+  padding: 8px 20px 20px;
   color: var(--theme-text, #fff);
   background: var(--popup-bg-raised);
   border-radius: inherit;

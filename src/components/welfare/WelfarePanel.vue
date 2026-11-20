@@ -114,7 +114,7 @@ onMounted(() => {
   min-height: 0;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  padding: calc(16px + env(safe-area-inset-top)) 18px calc(20px + env(safe-area-inset-bottom));
+  padding: 0 18px 20px;
   box-sizing: border-box;
   color: var(--theme-text, #fff);
 }

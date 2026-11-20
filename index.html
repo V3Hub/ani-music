@@ -53,20 +53,11 @@
         --van-primary-color: var(--theme-primary);
         --van-background: #f7f8fa;
         --theme-background: #0a0b16;
-        /* 底部安全区：避开 iPhone 底部指示条 */
-        --safe-bottom: env(safe-area-inset-bottom, 0px);
-        /* 安全区兜底纯色：与渐变深色端一致，避免出现色带 */
       }
       /* ===== 关键：html/body 必须深色覆盖，否则 splash 未触及的安全区露白 ===== */
       /* 描述文件（Web Clip）以独立模式打开时，顶部固定留白避开状态栏；手机浏览器不生效 */
-      html.is-standalone .player-main .main-content {
-        padding-top: 44px;
-      }
-      html.is-standalone .owner-panel,
-      html.is-standalone .discover-panel,
-      html.is-standalone .wish-panel,
-      html.is-standalone .welfare-panel {
-        padding-top: 44px;
+      html.is-standalone #app {
+        padding: 25px 0 20px;
       }
       html,
       body {
@@ -80,7 +71,6 @@
         overflow: hidden;
         overscroll-behavior: none;
       }
-
       /* ===== 开屏动画（纯内联，不依赖任何 JS 库） ===== */
       #splash {
         position: fixed;
@@ -271,7 +261,6 @@
       </div>
     </div>
     <div id="app"></div>
-
     <!-- 51.LA 站点统计：异步加载，避免 SDK 慢时阻塞首屏渲染出现白屏 -->
     <script
       charset="UTF-8"

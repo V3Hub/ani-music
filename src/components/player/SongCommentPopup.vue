@@ -733,7 +733,7 @@ function onHeaderClick() {
   align-items: center;
   gap: 10px;
   flex-shrink: 0;
-  padding: 10px 16px calc(12px + env(safe-area-inset-bottom));
+  padding: 10px 16px 12px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(0, 0, 0, 0.18);
 }
@@ -770,7 +770,7 @@ function onHeaderClick() {
 }
 
 .editor-wrap {
-  padding: 16px 16px calc(14px + env(safe-area-inset-bottom));
+  padding: 16px 16px 14px;
   color: var(--theme-text, #fff);
 }
 

@@ -10,12 +10,25 @@
 
     <main class="account-main">
       <section class="profile-card">
-        <button type="button" class="avatar-btn" :disabled="avatarSaving" @click="fileInput?.click()">
+        <div
+          class="avatar-btn"
+          role="button"
+          tabindex="0"
+          aria-label="查看头像大图"
+          @click="previewAvatar"
+          @keydown.enter="previewAvatar"
+        >
           <img class="avatar" :src="avatarSrc" alt="">
-          <span class="avatar-mask">
-            <van-icon name="photograph" size="18" />
-          </span>
-        </button>
+          <button
+            type="button"
+            class="avatar-change"
+            :disabled="avatarSaving"
+            aria-label="更换头像"
+            @click.stop="fileInput?.click()"
+          >
+            <van-icon name="photograph" size="13" />
+          </button>
+        </div>
         <input
           ref="fileInput"
           class="file-input"
@@ -143,11 +156,14 @@
         </button>
       </div>
     </van-popup>
+
+    <ImageViewer v-model:visible="avatarPreviewVisible" :src="avatarSrc" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { changePassword, updateUserProfile } from '@/api/user'
+import ImageViewer from '@/components/common/ImageViewer.vue'
 import VipBadge from '@/components/common/VipBadge.vue'
 import { LOGIN_RETURN_OWNER_KEY } from '@/constants/auth'
 import { useUserProfileStore } from '@/stores/userProfile'
@@ -178,6 +194,12 @@ const vipText = computed(() => (
 
 const fileInput = ref<HTMLInputElement | null>(null)
 const avatarSaving = ref(false)
+const avatarPreviewVisible = ref(false)
+
+/** 点击头像打开自研大图查看，支持双击 / 双指缩放、拖动 */
+function previewAvatar() {
+  avatarPreviewVisible.value = true
+}
 
 /** 保存资料并同步本地历史账号，切换账号弹层里的信息一并更新 */
 async function applyUpdate(payload: { username?: string, nickname?: string, avatar?: string }) {
@@ -330,7 +352,7 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: calc(10px + env(safe-area-inset-top)) 14px 0;
+  padding: 0 14px;
 }
 
 .account-header .back-btn,
@@ -364,7 +386,7 @@ onMounted(async () => {
   flex: 1;
   flex-direction: column;
   gap: 14px;
-  padding: 24px 24px calc(36px + env(safe-area-inset-bottom));
+  padding: 24px 24px 36px;
   overflow-y: auto;
 }
 
@@ -381,30 +403,33 @@ onMounted(async () => {
 
 .avatar-btn {
   position: relative;
-  overflow: hidden;
   padding: 0;
   border: 0;
   border-radius: 50%;
   background: transparent;
+  cursor: zoom-in;
+}
+
+/* 右下角小相机按钮：点击更换头像，与「点头像看大图」区分开 */
+.avatar-change {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 2px solid rgba(20, 22, 37, 0.9);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
   cursor: pointer;
 
   &:disabled {
     opacity: 0.6;
   }
-}
-
-.avatar-mask {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 26px;
-  border-radius: 0 0 36px 36px;
-  background: rgba(0, 0, 0, 0.45);
-  color: #fff;
 }
 
 .avatar {
@@ -525,7 +550,7 @@ onMounted(async () => {
 }
 
 .edit-wrap {
-  padding: 4px 20px calc(20px + env(safe-area-inset-bottom));
+  padding: 4px 20px 20px;
   color: #fff;
 }
 

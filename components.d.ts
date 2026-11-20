@@ -10,6 +10,7 @@ declare module 'vue' {
     AddToPlaylistSheet: typeof import('./src/components/playlist/AddToPlaylistSheet.vue')['default']
     CreatePlaylistPopup: typeof import('./src/components/playlist/CreatePlaylistPopup.vue')['default']
     DiscoverPanel: typeof import('./src/components/discover/DiscoverPanel.vue')['default']
+    ImageViewer: typeof import('./src/components/common/ImageViewer.vue')['default']
     ListeningModeSidebar: typeof import('./src/components/player/ListeningModeSidebar.vue')['default']
     OwnerPanel: typeof import('./src/components/owner/OwnerPanel.vue')['default']
     PlaybackQueuePopup: typeof import('./src/components/player/PlaybackQueuePopup.vue')['default']

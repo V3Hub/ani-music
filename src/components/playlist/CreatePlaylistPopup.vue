@@ -86,7 +86,7 @@ function onSubmit() {
 <style lang="scss" scoped>
 .create-playlist-popup {
   // 在已有弹层之上再打开时，用更亮一层的背景区分
-  background: var(--popup-bg-raised) !important;
+  background: var(--popup-bg-elevated) !important;
   border-top: 1px solid rgba(128, 128, 128, 0.2);
 }
 
@@ -94,7 +94,7 @@ function onSubmit() {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 8px 16px calc(20px + env(safe-area-inset-bottom));
+  padding: 8px 16px 20px;
   color: var(--theme-text, #fff);
 }
 

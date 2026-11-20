@@ -110,7 +110,7 @@ const currentMode = defineModel<string>('currentMode', { required: true })
     width: 100%;
     min-width: 250px;
     height: 100%;
-    padding: calc(12px + env(safe-area-inset-top)) 14px calc(18px + env(safe-area-inset-bottom));
+    padding: 12px 14px 18px;
     box-sizing: border-box;
     overflow-x: hidden;
     overflow-y: auto;

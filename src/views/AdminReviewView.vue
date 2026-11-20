@@ -342,7 +342,7 @@ function statusLabel(value: RegistrationStatus) {
 let loadSeq = 0
 
 /** 根据日期范围计算 from / to 参数（YYYY-MM-DD） */
-function resolveDateRange(): { from?: string; to?: string } {
+function resolveDateRange(): { from?: string, to?: string } {
   const pad = (n: number) => String(n).padStart(2, '0')
   const fmt = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
   const now = new Date()
@@ -529,7 +529,7 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: calc(10px + env(safe-area-inset-top)) 14px 0;
+  padding: 0 14px;
 
   .back-btn,
   .refresh-btn {
@@ -558,7 +558,7 @@ onMounted(async () => {
   flex: 1;
   flex-direction: column;
   gap: 12px;
-  padding: 16px 16px calc(30px + env(safe-area-inset-bottom));
+  padding: 16px 16px 30px;
   overflow-y: auto;
 }
 
@@ -614,7 +614,9 @@ onMounted(async () => {
     color: #fff;
     font-size: 13px;
 
-    &::placeholder { color: rgba(255, 255, 255, 0.3); }
+    &::placeholder {
+      color: rgba(255, 255, 255, 0.3);
+    }
   }
 
   .search-clear {
@@ -719,9 +721,18 @@ onMounted(async () => {
     border-radius: 999px;
     font-size: 11px;
 
-    &.pending { background: rgba(242, 201, 125, 0.15); color: #f2c97d; }
-    &.approved { background: rgba(103, 194, 58, 0.15); color: #67c23a; }
-    &.rejected { background: rgba(255, 107, 129, 0.15); color: #ff6b81; }
+    &.pending {
+      background: rgba(242, 201, 125, 0.15);
+      color: #f2c97d;
+    }
+    &.approved {
+      background: rgba(103, 194, 58, 0.15);
+      color: #67c23a;
+    }
+    &.rejected {
+      background: rgba(255, 107, 129, 0.15);
+      color: #ff6b81;
+    }
   }
 }
 
@@ -737,8 +748,13 @@ onMounted(async () => {
     padding: 6px 0;
     font-size: 12px;
 
-    span:first-child { color: rgba(255, 255, 255, 0.45); }
-    .reject-reason { color: #ff6b81; text-align: right; }
+    span:first-child {
+      color: rgba(255, 255, 255, 0.45);
+    }
+    .reject-reason {
+      color: #ff6b81;
+      text-align: right;
+    }
   }
 }
 
@@ -780,7 +796,9 @@ onMounted(async () => {
     font-weight: 600;
     cursor: pointer;
 
-    &:disabled { opacity: 0.5; }
+    &:disabled {
+      opacity: 0.5;
+    }
 
     &.reject {
       background: rgba(255, 107, 129, 0.12);
@@ -812,7 +830,7 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 18px 16px calc(20px + env(safe-area-inset-bottom));
+  padding: 18px 16px 20px;
 }
 
 .reject-head {
@@ -841,7 +859,9 @@ onMounted(async () => {
   font-size: 13px;
   resize: none;
 
-  &::placeholder { color: rgba(255, 255, 255, 0.3); }
+  &::placeholder {
+    color: rgba(255, 255, 255, 0.3);
+  }
 }
 
 .confirm-reject {
@@ -854,7 +874,9 @@ onMounted(async () => {
   font-weight: 600;
   cursor: pointer;
 
-  &:disabled { opacity: 0.5; }
+  &:disabled {
+    opacity: 0.5;
+  }
 
   &.vip-confirm {
     background: linear-gradient(135deg, #b8893e, #8b6bd8);
@@ -896,7 +918,9 @@ onMounted(async () => {
   color: #fff;
   font-size: 13px;
 
-  &::placeholder { color: rgba(255, 255, 255, 0.3); }
+  &::placeholder {
+    color: rgba(255, 255, 255, 0.3);
+  }
 }
 
 .vip-record-title {

@@ -52,13 +52,17 @@ const small = computed(() => props.small)
   }
 
   /* 高等级徽章色调略作区分 */
-  &.lv4, &.lv5, &.lv6 {
+  &.lv4,
+  &.lv5,
+  &.lv6 {
     border-color: rgba(167, 139, 250, 0.45);
     background: linear-gradient(135deg, rgba(167, 139, 250, 0.22), rgba(167, 139, 250, 0.08));
     color: #c4b5fd;
   }
 
-  &.lv7, &.lv8, &.lv9 {
+  &.lv7,
+  &.lv8,
+  &.lv9 {
     border-color: rgba(255, 145, 172, 0.45);
     background: linear-gradient(135deg, rgba(255, 145, 172, 0.22), rgba(255, 145, 172, 0.08));
     color: #ff91ac;

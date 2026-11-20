@@ -238,11 +238,6 @@ function onTopbarClick() {
 .queue-popup {
   height: 100%;
   background: transparent !important;
-
-  // 电脑端：上下留白，弹层变成悬浮面板，点空白处即可关闭
-  @media (min-width: 768px) {
-    height: calc(100% - 48px);
-  }
 }
 
 .queue-wrap {
@@ -250,15 +245,11 @@ function onTopbarClick() {
   flex-direction: column;
   width: 100%;
   height: 100%;
-  padding: 0 16px calc(16px + env(safe-area-inset-bottom));
+  padding: 0 16px 16px;
   box-sizing: border-box;
   color: var(--theme-text, #fff);
   background: var(--popup-bg);
   touch-action: pan-y;
-
-  @media (min-width: 768px) {
-    border-radius: 20px;
-  }
 }
 
 .queue-topbar {
@@ -404,7 +395,9 @@ function onTopbarClick() {
     background: rgba(128, 128, 128, 0.18);
     opacity: 0.75;
     cursor: pointer;
-    transition: opacity 0.15s, transform 0.15s;
+    transition:
+      opacity 0.15s,
+      transform 0.15s;
 
     &:active {
       transform: scale(0.92);

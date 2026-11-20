@@ -184,7 +184,7 @@ onMounted(() => loadMore(true))
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: calc(10px + env(safe-area-inset-top)) 14px 0;
+  padding: 0 14px;
 }
 
 .notice-header .back-btn {
@@ -228,7 +228,7 @@ onMounted(() => loadMore(true))
   flex: 1;
   flex-direction: column;
   gap: 10px;
-  padding: 18px 16px calc(24px + env(safe-area-inset-bottom));
+  padding: 18px 16px 24px;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }

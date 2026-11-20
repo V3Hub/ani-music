@@ -236,7 +236,7 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: calc(10px + env(safe-area-inset-top)) 14px 0;
+  padding: 0 14px;
 
   .icon-btn {
     display: flex;
@@ -264,7 +264,7 @@ onMounted(async () => {
   flex: 1;
   flex-direction: column;
   gap: 12px;
-  padding: 16px 16px calc(30px + env(safe-area-inset-bottom));
+  padding: 16px 16px 30px;
   overflow-y: auto;
 }
 

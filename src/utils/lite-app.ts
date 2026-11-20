@@ -9,6 +9,9 @@ const APP_URL = 'https://music.ani.l.cd'
 const PROFILE_FILE_NAME = 'ani-music.mobileconfig'
 const PROFILE_MIME = 'application/x-apple-aspen-config'
 const CLIP_LABEL = 'Ani 音乐'
+/** 当前前端构建版本，写进描述文件便于确认安装的是哪个版本 */
+const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : ''
+const VERSION_SUFFIX = APP_VERSION ? ` v${APP_VERSION}` : ''
 
 /** 设备平台：iOS 可安装描述文件；Android 使用浏览器「添加到主屏幕」 */
 export type MobilePlatform = 'ios' | 'android' | 'other'
@@ -42,6 +45,15 @@ function escapeXml(value: string) {
     .replace(/>/g, '&gt;')
 }
 
+/** 图标地址必须可被手机访问：以 APP_URL 为基准拼出绝对地址 */
+function resolveIconUrl() {
+  try {
+    return new URL(APP_ICON_URL, APP_URL).href
+  } catch {
+    return `${APP_URL.replace(/\/$/, '')}${APP_ICON_URL}`
+  }
+}
+
 /** 把站点图标画成 180×180 PNG，返回 base64（失败时返回 null，描述文件将使用默认图标） */
 function loadIconBase64(): Promise<string | null> {
   return new Promise((resolve) => {
@@ -73,6 +85,8 @@ function loadIconBase64(): Promise<string | null> {
 /** 生成安装到桌面的 Web Clip 描述文件内容 */
 function buildProfile(iconBase64: string | null) {
   const pageUrl = escapeXml(APP_URL)
+  // iOS 要求 Web Clip 必须带图标 URL，否则描述文件可能被判为无效（退化成普通 Safari 书签）
+  const iconUrl = escapeXml(resolveIconUrl())
   const iconEntry = iconBase64
     ? `
         <key>Icon</key>
@@ -87,12 +101,16 @@ function buildProfile(iconBase64: string | null) {
     <dict>
       <key>FullScreen</key>
       <true/>${iconEntry}
+      <key>IconURL</key>
+      <string>${iconUrl}</string>
+      <key>IgnoreManifestScope</key>
+      <false/>
       <key>IsRemovable</key>
       <true/>
       <key>Label</key>
       <string>${CLIP_LABEL}</string>
       <key>PayloadDescription</key>
-      <string>在桌面创建 ${CLIP_LABEL} 快捷方式</string>
+      <string>在桌面创建 ${CLIP_LABEL} 快捷方式（版本${VERSION_SUFFIX || '未知'}）</string>
       <key>PayloadDisplayName</key>
       <string>${CLIP_LABEL}</string>
       <key>PayloadIdentifier</key>
@@ -109,12 +127,14 @@ function buildProfile(iconBase64: string | null) {
       <string>${pageUrl}</string>
     </dict>
   </array>
+  <key>PayloadDescription</key>
+  <string>${CLIP_LABEL} 轻量版${VERSION_SUFFIX}，安装后在桌面创建快捷方式</string>
   <key>PayloadDisplayName</key>
   <string>${CLIP_LABEL} 轻量版</string>
   <key>PayloadIdentifier</key>
   <string>cc.ani.animusic.profile</string>
   <key>PayloadOrganization</key>
-  <string>Ani</string>
+  <string>Ani Music</string>
   <key>PayloadRemovalDisallowed</key>
   <false/>
   <key>PayloadType</key>

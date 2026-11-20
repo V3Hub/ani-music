@@ -182,7 +182,7 @@ function coverOf(pic?: string) {
   display: flex;
   flex-direction: column;
   gap: 20px;
-  padding: 10px 20px calc(16px + env(safe-area-inset-bottom));
+  padding: 0 20px;
   // flex item 占据剩余空间，内容多时自己滚动
   flex: 1;
   min-height: 0;
@@ -195,7 +195,7 @@ function coverOf(pic?: string) {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 5px;
+    padding: 0 5px;
 
     .listen-time {
       font-size: 13px;

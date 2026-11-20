@@ -12,8 +12,9 @@
       @swiper="onSwiperReady"
       @slide-change-transition-end="onSlideChange"
     >
-      <SwiperSlide v-for="song in player.playList" :key="song.id">
-        <div class="slide-content">
+      <SwiperSlide v-for="(song, index) in player.playList" :key="song.id">
+        <!-- 只渲染当前歌曲附近的 slide，避免整个队列的封面/进度条占满 WebView 内存 -->
+        <div v-if="isNear(index)" class="slide-content">
           <div class="cover-box">
             <van-image width="100%" height="100%" :src="song.pic ?? ''" fit="cover" />
           </div>
@@ -24,15 +25,15 @@
           >
             <div class="lyric-container">
               <div
-                v-for="(line, index) in resolveLyricLines(song)"
-                :key="index"
+                v-for="(line, lineIndex) in linesOf(song)"
+                :key="lineIndex"
                 class="lyric-line"
-                :class="{ active: isCurrent(song) && currentLine === index }"
+                :class="{ active: isCurrent(song) && currentLine === lineIndex }"
               >
                 {{ line }}
               </div>
               <van-empty
-                v-if="!resolveLyricLines(song).length"
+                v-if="!linesOf(song).length"
                 image="musical-note"
                 description="暂时没找到歌词"
               />
@@ -118,6 +119,7 @@
             />
           </div>
         </div>
+        <div v-else class="slide-content slide-placeholder" />
       </SwiperSlide>
     </Swiper>
   </div>
@@ -172,6 +174,33 @@ function isCurrent(song: Song): boolean {
   return player.currentSong?.id === song.id
 }
 
+/**
+ * 只渲染当前歌曲附近的 slide：
+ * Swiper 会把整个队列都挂进 DOM，全量渲染封面和进度条会占满 iOS WebView 内存，
+ * 滑几首后进程被系统回收，表现就是白屏 / 整页刷新
+ */
+const RENDER_WINDOW = 2
+function isNear(index: number) {
+  const total = player.playList.length
+  // loop 模式首尾相接：首尾两页始终渲染，避免 Swiper 克隆出来的滑页是空白
+  if (total > 2 && (index === 0 || index === total - 1))
+    return true
+  const diff = Math.abs(index - player.currentIndex)
+  // loop 模式下首尾相邻，取环形距离
+  return total > 2 ? Math.min(diff, total - diff) <= RENDER_WINDOW : diff <= RENDER_WINDOW
+}
+
+/** 歌词行缓存：避免每次渲染都重新 map 一遍数组 */
+const lyricLineCache = new WeakMap<Song, { list: Song['lyricList'], lines: string[] }>()
+function linesOf(song: Song) {
+  const cached = lyricLineCache.get(song)
+  if (cached && cached.list === song.lyricList)
+    return cached.lines
+  const lines = resolveLyricLines(song)
+  lyricLineCache.set(song, { list: song.lyricList, lines })
+  return lines
+}
+
 /** 进度条本地值：拖拽时不被 timeupdate 覆盖 */
 const sliderValue = ref(0)
 const dragging = ref(false)
@@ -203,6 +232,13 @@ function onSliderDragEnd() {
   position: relative; // 定位由外层 .player-stage-absolute 负责
   width: 100%;
   height: 100%;
+  // 手势全交给 Swiper：禁止浏览器纵向滚动与下拉刷新，避免滑动时页面被整页刷新
+  touch-action: none;
+  overscroll-behavior: contain;
+
+  :deep(.swiper) {
+    touch-action: none;
+  }
 
   .slide-content {
     height: 100%;
@@ -211,11 +247,6 @@ function onSliderDragEnd() {
     padding: 35px 20px 60px;
     box-sizing: border-box;
     overflow: hidden;
-
-    // 电脑端：底部工具栏上移后同步上移内容，避免进度条被底栏遮挡
-    @media (min-width: 768px) {
-      padding-bottom: 78px;
-    }
   }
 
   .cover-box {

@@ -247,7 +247,7 @@ function goBack() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: calc(10px + env(safe-area-inset-top)) 14px 0;
+  padding: 0 14px;
 
   .back-btn,
   .header-space {
@@ -282,7 +282,7 @@ function goBack() {
   flex-direction: column;
   justify-content: center;
   gap: 28px;
-  padding: 0 28px calc(48px + env(safe-area-inset-bottom));
+  padding: 0 28px 48px;
   overflow-y: auto;
 }
 
@@ -398,7 +398,7 @@ function goBack() {
 }
 
 .choose-sheet {
-  padding: 4px 20px calc(20px + env(safe-area-inset-bottom));
+  padding: 4px 20px 20px;
   color: #fff;
 }
 

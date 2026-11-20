@@ -358,7 +358,7 @@ onBeforeUnmount(pauseRotate)
   min-height: 0;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  padding: calc(16px + env(safe-area-inset-top)) 18px calc(24px + env(safe-area-inset-bottom));
+  padding: 0 18px;
   box-sizing: border-box;
   color: var(--theme-text, #fff);
   font-size: 14px;
