@@ -135,9 +135,13 @@
       @admin-review="openAdminReview"
       @admin-error-logs="openAdminErrorLogs"
       @admin-song-tags="openAdminSongTags"
+      @admin-messages="openAdminMessages"
+      @contact-admin="contactAdminVisible = true"
     />
 
     <CreatePlaylistPopup v-model:visible="createVisible" :submitting="creatingPlaylist" @submit="onCreatePlaylist" />
+
+    <ContactAdminSheet v-model:visible="contactAdminVisible" />
 
     <SongActionSheet
       v-model:visible="songActionVisible"
@@ -210,6 +214,7 @@ import PlayerToolbar from '@/components/player/PlayerToolbar.vue'
 import SongSearchPopup from '@/components/player/SongSearchPopup.vue'
 import SongCommentPopup from '@/components/player/SongCommentPopup.vue'
 import SongListDrawer from '@/components/playlist/SongListDrawer.vue'
+import ContactAdminSheet from '@/components/settings/ContactAdminSheet.vue'
 import CreatePlaylistPopup from '@/components/playlist/CreatePlaylistPopup.vue'
 import SongActionSheet from '@/components/playlist/SongActionSheet.vue'
 import SongTagPopup from '@/components/playlist/SongTagPopup.vue'
@@ -296,6 +301,7 @@ const tagSong = ref<Song | null>(null)
 
 const keyword = ref('')
 const sleepVisible = ref(false)
+const contactAdminVisible = ref(false)
 
 const favoriteSongs = ref<Song[]>([])
 
@@ -439,6 +445,12 @@ const { togglePlayback } = usePlaybackControl()
 function openAdminSongTags() {
   settingsVisible.value = false
   router.push('/admin/song-tags')
+}
+
+/** 打开用户留言管理页（仅管理员可见入口，接口侧仍有权限校验） */
+function openAdminMessages() {
+  settingsVisible.value = false
+  router.push('/admin/messages')
 }
 const { listenTimeText } = useListenTimeStat()
 

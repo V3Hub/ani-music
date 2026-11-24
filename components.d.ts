@@ -8,10 +8,12 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     AddToPlaylistSheet: typeof import('./src/components/playlist/AddToPlaylistSheet.vue')['default']
+    ContactAdminSheet: typeof import('./src/components/settings/ContactAdminSheet.vue')['default']
     CreatePlaylistPopup: typeof import('./src/components/playlist/CreatePlaylistPopup.vue')['default']
     DiscoverPanel: typeof import('./src/components/discover/DiscoverPanel.vue')['default']
     ImageViewer: typeof import('./src/components/common/ImageViewer.vue')['default']
     ListeningModeSidebar: typeof import('./src/components/player/ListeningModeSidebar.vue')['default']
+    NotificationReplySheet: typeof import('./src/components/notification/NotificationReplySheet.vue')['default']
     OwnerPanel: typeof import('./src/components/owner/OwnerPanel.vue')['default']
     PlaybackQueuePopup: typeof import('./src/components/player/PlaybackQueuePopup.vue')['default']
     PlayerBottomNav: typeof import('./src/components/player/PlayerBottomNav.vue')['default']
@@ -30,6 +32,7 @@ declare module 'vue' {
     VanBadge: typeof import('vant/es')['Badge']
     VanDatePicker: typeof import('vant/es')['DatePicker']
     VanEmpty: typeof import('vant/es')['Empty']
+    VanField: typeof import('vant/es')['Field']
     VanIcon: typeof import('vant/es')['Icon']
     VanImage: typeof import('vant/es')['Image']
     VanImagePreview: typeof import('vant/es')['ImagePreview']

@@ -3,14 +3,10 @@
     <div class="owner-header">
       <div class="listen-time">今日已听 {{ listenTime }}</div>
       <div class="header-actions">
-        <van-badge
-          v-if="loggedIn"
-          :content="unreadCount > 99 ? '99+' : String(unreadCount)"
-          :show-zero="false"
-          :offset="[2, 2]"
-        >
-          <van-icon class="notice-btn" name="bell" size="22" @click="emit('openNotifications')" />
-        </van-badge>
+        <span v-if="loggedIn" class="notice-wrap" @click="emit('openNotifications')">
+          <van-icon class="notice-btn" name="bell" size="22" />
+          <span v-if="unreadCount > 0" class="notice-dot" />
+        </span>
         <van-icon class="settings-btn" name="setting-o" size="22" @click="emit('openSettings')" />
       </div>
     </div>
@@ -107,7 +103,7 @@ import VipBadge from '@/components/common/VipBadge.vue'
 import { useUserProfileStore } from '@/stores/userProfile'
 import { resolveAvatarOrDefault } from '@/utils/avatar'
 import { resolveDisplayName } from '@/utils/user-token'
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 const props = defineProps<{
   userToken: string
@@ -140,18 +136,20 @@ const emit = defineEmits<{
 
 const profileStore = useUserProfileStore()
 
-/** 未读消息数：进入「我的」页时拉取一次，铃铛角标展示 */
+/** 未读消息数：登录态就绪后拉取，铃铛角标展示 */
 const unreadCount = ref(0)
 
-onMounted(async () => {
-  if (!props.loggedIn)
+watch(() => props.loggedIn, async (logged) => {
+  if (!logged) {
+    unreadCount.value = 0
     return
+  }
   try {
     unreadCount.value = await getUnreadNotificationCount()
   } catch {
     // 未读数失败不影响页面，错误由拦截器提示
   }
-})
+}, { immediate: true })
 
 /** 没有上传头像时回退到按 userToken 生成的默认头像 */
 const avatarSrc = computed(() => resolveAvatarOrDefault(props.avatar, props.userToken))
@@ -213,6 +211,23 @@ function coverOf(pic?: string) {
       color: var(--theme-text, #fff);
       cursor: pointer;
       opacity: 0.9;
+    }
+
+    .notice-wrap {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      cursor: pointer;
+    }
+    .notice-dot {
+      position: absolute;
+      right: -1px;
+      bottom: 0;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #ff4d4f;
+      box-shadow: 0 0 0 2px var(--theme-background, #0a0b16);
     }
   }
 

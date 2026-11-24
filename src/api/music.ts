@@ -11,57 +11,6 @@ import type { LyricLine, PlaylistItem, Song, SongComment } from '@/types/music'
 import { request } from '@/utils/request'
 
 /**
- * 示例歌单 —— 仅作降级兜底，后端可用时不会走到这里。
- */
-export const demoPlaylist: Song[] = [
-  {
-    id: '1',
-    title: 'SoundHelix Song 1',
-    singer: 'SoundHelix',
-    album: 'Demo',
-    pic: 'https://picsum.photos/seed/ain1/200/200',
-    lrc: '',
-    url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
-  },
-  {
-    id: '2',
-    title: 'SoundHelix Song 2',
-    singer: 'SoundHelix',
-    album: 'Demo',
-    pic: 'https://picsum.photos/seed/ain2/200/200',
-    lrc: '',
-    url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3',
-  },
-  {
-    id: '3',
-    title: 'SoundHelix Song 3',
-    singer: 'SoundHelix',
-    album: 'Demo',
-    pic: 'https://picsum.photos/seed/ain3/200/200',
-    lrc: '',
-    url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3',
-  },
-  {
-    id: '4',
-    title: 'SoundHelix Song 4',
-    singer: 'SoundHelix',
-    album: 'Demo',
-    pic: 'https://picsum.photos/seed/ain4/200/200',
-    lrc: '',
-    url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3',
-  },
-  {
-    id: '5',
-    title: 'SoundHelix Song 5',
-    singer: 'SoundHelix',
-    album: 'Demo',
-    pic: 'https://picsum.photos/seed/ain5/200/200',
-    lrc: '',
-    url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3',
-  },
-]
-
-/**
  * 解析 LRC 格式歌词为时间轴数组。
  * 支持 [mm:ss.xx] 时间戳；同一行多个时间戳会拆成多行。
  */
@@ -106,20 +55,14 @@ function attachLyrics<T extends { lrc?: string, lyricList?: LyricLine[] }>(list:
  * @param excludeIds 需要排除的歌曲 id：一轮 30 首播完后换新批次，避免重复
  */
 export async function getRecommendList(mode = 'default', excludeIds: Array<number | string> = []): Promise<Song[]> {
-  try {
-    const data = await request.get<Song[]>('/api/recommend/hot', {
-      // _t 绕过浏览器 / CDN 缓存，保证切换模式 / 换批次时拿到最新榜单
-      params: {
-        mode,
-        _t: Date.now(),
-        ...(excludeIds.length ? { exclude: excludeIds.join(',') } : {}),
-      },
-    })
-    return attachLyrics(data || [])
-  } catch (err) {
-    console.warn('[music] getRecommendList 失败，使用示例数据', err)
-    return [...demoPlaylist]
-  }
+  const data = await request.get<Song[]>('/api/recommend/hot', {
+    params: {
+      mode,
+      _t: Date.now(),
+      ...(excludeIds.length ? { exclude: excludeIds.join(',') } : {}),
+    },
+  })
+  return attachLyrics(data || [])
 }
 
 // ==================== 收藏 ====================

@@ -226,6 +226,8 @@ const ROUTES = {
   '/api/user/profile': { GET: handleGetUserProfile, POST: handleUpdateUserProfile },
   '/api/user/public-profile': { GET: handleGetPublicUserProfile },
   '/api/user/message': { POST: handleSendUserMessage },
+  '/api/admin/message/add': { POST: handleAddAdminMessage },
+  '/api/admin/messages': { GET: handleGetAdminMessages },
   '/api/user/password': { POST: handleChangePassword },
   '/api/user/register': { POST: handleRegister },
   '/api/user/register/status': { GET: handleRegisterStatus },
@@ -233,6 +235,8 @@ const ROUTES = {
   '/api/admin/registration/review': { POST: handleAdminReviewRegistration },
   '/api/admin/user/vip-level': { POST: handleAdminSetVipLevel },
   '/api/admin/user/vip-records': { GET: handleAdminVipRecords },
+  '/api/admin/inbox': { GET: handleAdminInboxList },
+  '/api/admin/inbox/reply': { POST: handleAdminReplyMessage },
   '/api/error-log/report': { POST: handleReportErrorLog },
   '/api/admin/error-logs': { GET: handleAdminListErrorLogs },
   '/api/admin/error-log/status': { POST: handleAdminUpdateErrorLogStatus },
@@ -285,6 +289,7 @@ const ROUTES = {
   '/api/notification/list': { GET: handleListNotifications },
   '/api/notification/unread': { GET: handleNotificationUnreadCount },
   '/api/notification/read': { POST: handleMarkNotificationsRead },
+  '/api/notification/delete': { POST: handleDeleteNotification },
   '/api/playlist/share': { GET: handleGetPlaylistShareCount, POST: handleReportPlaylistShare },
   '/api/song/theme-color': { GET: handleGetSongThemeColor },
   '/api/song/meta': { POST: handleUpdateSongMeta },
@@ -693,6 +698,198 @@ async function handleSendUserMessage(request, env) {
     content,
   })
   return jsonResp({ code: 200, msg: '留言已送达', data: null })
+}
+
+/** 联系管理员留言的最大长度 */
+const ADMIN_MESSAGE_MAX_LENGTH = 500
+
+/** 用户给管理员留言 POST /api/admin/message/add { content } */
+async function handleAddAdminMessage(request, env) {
+  const userId = getRequestUserId(request)
+  if (!userId)
+    return jsonResp({ code: 401, msg: '登录后才能联系管理员' }, 401)
+  const body = await request.json().catch(() => ({}))
+  const content = String(body.content || '').trim()
+  if (!content)
+    return jsonResp({ code: 400, msg: '留言内容不能为空' })
+  if (content.length > ADMIN_MESSAGE_MAX_LENGTH)
+    return jsonResp({ code: 400, msg: `留言最多 ${ADMIN_MESSAGE_MAX_LENGTH} 字` })
+
+  const { results } = await env.DB.prepare(
+    `SELECT id FROM admin_message WHERE user_id = ? AND from_admin = 0
+     ORDER BY create_time DESC LIMIT 1`,
+  ).bind(String(userId)).all()
+  const lastUserMsg = results?.[0]
+  if (lastUserMsg) {
+    const countRow = await env.DB.prepare(
+      `SELECT COUNT(*) AS cnt FROM admin_message
+       WHERE user_id = ? AND from_admin = 0 AND create_time >= DATETIME(?, '+1 day')`,
+    ).bind(String(userId), lastUserMsg.create_time).first()
+    // 24 小时内最多发 5 条用户侧留言
+    if ((countRow?.cnt || 0) >= 5)
+      return jsonResp({ code: 429, msg: '留言过于频繁，请 24 小时后再试' }, 429)
+  }
+
+  const info = await env.DB.prepare(
+    `INSERT INTO admin_message (user_id, content, from_admin) VALUES (?, ?, 0)`,
+  ).bind(String(userId), content).run()
+
+  // 给所有管理员推送站内通知（至少让管理员收到一条提醒）
+  const admins = await env.DB.prepare(
+    `SELECT id FROM users WHERE is_admin = 1`,
+  ).all()
+  for (const admin of admins.results || []) {
+    await pushNotification(env.DB, {
+      userId: admin.id,
+      type: 'admin_message',
+      senderId: userId,
+      senderName: '用户',
+      content: content.length > 40 ? `${content.slice(0, 40)}…` : content,
+      targetTitle: '联系管理员',
+    })
+  }
+
+  return jsonResp({ code: 200, msg: '留言已发送，管理员会尽快回复', data: { id: info.lastInsertRowid } })
+}
+
+/** 用户拉取自己与管理员的完整对话 GET /api/admin/messages */
+async function handleGetAdminMessages(request, env) {
+  const userId = getRequestUserId(request)
+  if (!userId)
+    return jsonResp({ code: 401, msg: '请先登录' }, 401)
+
+  const { results } = await env.DB.prepare(
+    `SELECT m.id, m.content, m.from_admin, m.create_time,
+            CASE WHEN m.from_admin = 1 THEN u.nickname ELSE NULL END AS admin_nickname,
+            CASE WHEN m.from_admin = 1 THEN u.avatar_url ELSE NULL END AS admin_avatar
+     FROM admin_message m
+     LEFT JOIN users u ON u.is_admin = 1 AND m.from_admin = 1
+     WHERE m.user_id = ?
+     ORDER BY m.create_time ASC, m.id ASC
+     LIMIT 500`,
+  ).bind(String(userId)).all()
+
+  return jsonResp({ code: 200, msg: '获取成功', data: results || [] })
+}
+
+/** 管理员收件箱列表 GET /api/admin/inbox?keyword= */
+async function handleAdminInboxList(request, env) {
+  const adminId = await requireAdmin(request, env)
+  if (!adminId)
+    return jsonResp({ code: 403, msg: '无管理员权限' }, 403)
+
+  const keyword = String(new URL(request.url).searchParams.get('keyword') || '').trim()
+
+  // 一次拉全部消息（带索引），应用层分组聚合，避免每行跑 3 次子查询
+  const allMessages = await env.DB.prepare(
+    `SELECT user_id, content, from_admin, create_time FROM admin_message ORDER BY create_time ASC`,
+  ).all()
+  const rows = allMessages.results || []
+
+  // 应用层按 user_id 分组：算最后一条、未读数（用户最新一条 from_admin=1 之前的所有用户消息）、总数
+  const groupMap = new Map()
+  for (const row of rows) {
+    const uid = String(row.user_id)
+    if (!groupMap.has(uid)) {
+      groupMap.set(uid, { user_id: uid, last: null, total: 0, lastAdminReplyTime: '', userMessages: [] })
+    }
+    const g = groupMap.get(uid)
+    g.total += 1
+    g.last = row
+    if (Number(row.from_admin) === 1) {
+      g.lastAdminReplyTime = row.create_time
+    } else {
+      g.userMessages.push(row.create_time)
+    }
+  }
+
+  // 未读：晚于最后一次管理员回复的用户消息数
+  const summary = []
+  for (const g of groupMap.values()) {
+    const unread = g.lastAdminReplyTime
+      ? g.userMessages.filter(t => t > g.lastAdminReplyTime).length
+      : g.userMessages.length
+    summary.push({
+      user_id: g.user_id,
+      content: g.last.content,
+      from_admin: g.last.from_admin,
+      last_time: g.last.create_time,
+      total: g.total,
+      unread_count: unread,
+    })
+  }
+  summary.sort((a, b) => (a.last_time < b.last_time ? 1 : -1))
+  const top = summary.slice(0, 200)
+
+  // 批量取用户资料
+  const userIds = top.map(item => item.user_id)
+  let userMap = new Map()
+  if (userIds.length) {
+    const placeholders = userIds.map(() => '?').join(',')
+    const { results: userRows } = await env.DB.prepare(
+      `SELECT id, nickname, avatar_url, username FROM users WHERE id IN (${placeholders})`,
+    ).bind(...userIds).all()
+    userMap = new Map((userRows || []).map(u => [String(u.id), u]))
+  }
+
+  let data = top.map(item => ({
+    ...item,
+    nickname: userMap.get(String(item.user_id))?.nickname || '',
+    avatar_url: userMap.get(String(item.user_id))?.avatar_url || '',
+    username: userMap.get(String(item.user_id))?.username || '',
+  }))
+
+  // 关键词过滤（应用层 LIKE）
+  if (keyword) {
+    const k = keyword.toLowerCase()
+    data = data.filter(item =>
+      (item.username || '').toLowerCase().includes(k)
+      || (item.nickname || '').toLowerCase().includes(k),
+    )
+  }
+
+  return jsonResp({ code: 200, msg: '获取成功', data })
+}
+
+/** 管理员回复用户 POST /api/admin/inbox/reply { userId, content } */
+async function handleAdminReplyMessage(request, env) {
+  const adminId = await requireAdmin(request, env)
+  if (!adminId)
+    return jsonResp({ code: 403, msg: '无管理员权限' }, 403)
+
+  const body = await request.json().catch(() => ({}))
+  const userId = String(body.userId || '').trim()
+  const content = String(body.content || '').trim()
+  if (!userId || !content)
+    return jsonResp({ code: 400, msg: '回复内容不能为空' })
+  if (content.length > ADMIN_MESSAGE_MAX_LENGTH)
+    return jsonResp({ code: 400, msg: `回复最多 ${ADMIN_MESSAGE_MAX_LENGTH} 字` })
+
+  // 确认这个用户确实发过消息
+  const userMsg = await env.DB.prepare(
+    `SELECT id FROM admin_message WHERE user_id = ? AND from_admin = 0 LIMIT 1`,
+  ).bind(userId).first()
+  if (!userMsg)
+    return jsonResp({ code: 404, msg: '该用户暂无留言' }, 404)
+
+  await env.DB.prepare(
+    `INSERT INTO admin_message (user_id, content, from_admin) VALUES (?, ?, 1)`,
+  ).bind(userId, content).run()
+
+  // 给用户推送通知
+  const adminRow = await env.DB.prepare(
+    `SELECT nickname FROM users WHERE id = ?`,
+  ).bind(adminId).first()
+  await pushNotification(env.DB, {
+    userId: Number(userId),
+    type: 'admin_reply',
+    senderId: adminId,
+    senderName: adminRow?.nickname || '管理员',
+    content: content.length > 40 ? `${content.slice(0, 40)}…` : content,
+    targetTitle: '联系管理员',
+  })
+
+  return jsonResp({ code: 200, msg: '回复成功', data: null })
 }
 
 /**
@@ -1305,31 +1502,45 @@ async function handleGetHotList(request, env) {
   )
 
   // 候选池：全部歌曲带上近 7 天实时热度，最多取 300 首参与排序
-  const { results } = await DB.prepare(
-    `
-    SELECT s.*,
-           COALESCE(h.day_plays, 0) AS day_plays,
-           COALESCE(h.week_plays, 0) AS week_plays
-    FROM songs s
-    LEFT JOIN (
-      SELECT song_id,
-             COUNT(*) AS week_plays,
-             SUM(CASE
-               WHEN create_time >= DATETIME(DATE('now', '-1 day'))
-                AND create_time < DATETIME('now') THEN 1 ELSE 0
-             END) AS day_plays
-      FROM user_play_record
-      WHERE create_time >= DATETIME(DATE('now', '-6 day'))
-      GROUP BY song_id
-    ) h ON h.song_id = s.id
-    WHERE (? = '' OR EXISTS (
-      SELECT 1 FROM song_tag t WHERE t.song_id = s.id AND t.tag = ?
-    ))
-    ORDER BY (COALESCE(h.day_plays, 0) * 3 + COALESCE(h.week_plays, 0)) DESC,
-             s.id DESC
-    LIMIT 300
-  `,
-  ).bind(tagFilter, tagFilter).all()
+  // KV 缓存 5 分钟：热度是全局数据，与用户无关，缓存可大幅减少 user_play_record 的 GROUP BY 扫描
+  const cacheKey = `hot:candidates:${tagFilter || 'all'}`
+  let results = null
+  if (env.HOT_KV) {
+    const cached = await env.HOT_KV.get(cacheKey, { type: 'json' })
+    if (cached) results = cached
+  }
+  if (!results) {
+    const query = await DB.prepare(
+      `
+      SELECT s.*,
+             COALESCE(h.day_plays, 0) AS day_plays,
+             COALESCE(h.week_plays, 0) AS week_plays
+      FROM songs s
+      LEFT JOIN (
+        SELECT song_id,
+               COUNT(*) AS week_plays,
+               SUM(CASE
+                 WHEN create_time >= DATETIME(DATE('now', '-1 day'))
+                  AND create_time < DATETIME('now') THEN 1 ELSE 0
+               END) AS day_plays
+        FROM user_play_record
+        WHERE create_time >= DATETIME(DATE('now', '-6 day'))
+        GROUP BY song_id
+      ) h ON h.song_id = s.id
+      WHERE (? = '' OR EXISTS (
+        SELECT 1 FROM song_tag t WHERE t.song_id = s.id AND t.tag = ?
+      ))
+      ORDER BY (COALESCE(h.day_plays, 0) * 3 + COALESCE(h.week_plays, 0)) DESC,
+               s.id DESC
+      LIMIT 300
+    `,
+    ).bind(tagFilter, tagFilter).all()
+    results = query.results || []
+    if (env.HOT_KV) {
+      // 异步写入缓存，不阻塞响应
+      env.HOT_KV.put(cacheKey, JSON.stringify(results), { expirationTtl: 300 }).catch(() => {})
+    }
+  }
   // 换批次：排除已播放过的歌曲，保证下一批不重复
   const rows = (results || []).filter(row => !excludeIds.has(Number(row.id)))
   if (!rows.length)
@@ -2285,7 +2496,6 @@ async function handleGetComments(request, env) {
       u.nickname AS nickname,
       u.avatar_url AS avatar,
       u.vip_level AS vip_level,
-      (SELECT COUNT(*) FROM song_comment r WHERE r.parent_id = c.id) AS reply_count,
       EXISTS(SELECT 1 FROM song_comment_like l WHERE l.comment_id = c.id AND l.user_id = ?) AS liked
     FROM song_comment c
     LEFT JOIN users u ON u.id = c.user_id
@@ -2295,10 +2505,29 @@ async function handleGetComments(request, env) {
   const { results } = await env.DB.prepare(sql)
     .bind(userId, ...whereParams, pageSize, (page - 1) * pageSize)
     .all()
+
+  // 批量取所有评论的回复数，避免每行跑一次 COUNT 子查询
+  const commentRows = results || []
+  const commentIds = commentRows.map(r => r.id)
+  const replyCountMap = new Map()
+  if (commentIds.length) {
+    const placeholders = commentIds.map(() => '?').join(',')
+    const { results: replyRows } = await env.DB.prepare(
+      `SELECT parent_id, COUNT(*) AS cnt FROM song_comment WHERE parent_id IN (${placeholders}) GROUP BY parent_id`,
+    ).bind(...commentIds).all()
+    for (const row of replyRows || []) {
+      replyCountMap.set(row.parent_id, Number(row.cnt) || 0)
+    }
+  }
+
   return jsonResp({
     code: 200,
     msg: '获取评论成功',
-    data: (results || []).map(row => mapCommentRow(row, row.liked, userId)),
+    data: commentRows.map((row) => {
+      const mapped = mapCommentRow(row, row.liked, userId)
+      mapped.replyCount = replyCountMap.get(row.id) || 0
+      return mapped
+    }),
   })
 }
 
@@ -3567,6 +3796,7 @@ function mapNotificationRow(row) {
     content: row.content || '',
     targetId: row.target_id,
     targetTitle: row.target_title || '',
+    refId: row.ref_id || 0,
     read: !!row.is_read,
     createTime: toEpochMs(row.create_time),
   }
@@ -3578,15 +3808,21 @@ async function handleListNotifications(request, env) {
   const url = new URL(request.url)
   const page = Math.max(1, Number(url.searchParams.get('page')) || 1)
   const pageSize = Math.min(50, Math.max(1, Number(url.searchParams.get('pageSize')) || 20))
+  const box = url.searchParams.get('box') === 'outbox' ? 'outbox' : 'inbox'
 
-  const totalRow = await env.DB.prepare('SELECT COUNT(*) AS count FROM user_notification WHERE user_id = ?')
+  // outbox：我发出的，sender_id = 当前用户；join 接收者资料（u.id = n.user_id），返回的 sender_* 字段含义变成"对方"
+  // inbox：我收到的，user_id = 当前用户；join 发送者资料（u.id = n.sender_id）
+  const whereCol = box === 'outbox' ? 'n.sender_id' : 'n.user_id'
+  const joinCol = box === 'outbox' ? 'n.user_id' : 'n.sender_id'
+
+  const totalRow = await env.DB.prepare(`SELECT COUNT(*) AS count FROM user_notification n WHERE ${whereCol} = ?`)
     .bind(userId)
     .first()
   const { results } = await env.DB.prepare(
     `SELECT n.*, u.nickname AS sender_nickname, u.avatar_url AS sender_avatar
      FROM user_notification n
-     LEFT JOIN users u ON u.id = n.sender_id
-     WHERE n.user_id = ?
+     LEFT JOIN users u ON u.id = ${joinCol}
+     WHERE ${whereCol} = ?
      ORDER BY n.id DESC
      LIMIT ? OFFSET ?`,
   )
@@ -3623,4 +3859,22 @@ async function handleMarkNotificationsRead(request, env) {
     ? await env.DB.prepare('UPDATE user_notification SET is_read = 1 WHERE id = ? AND user_id = ?').bind(id, userId).run()
     : await env.DB.prepare('UPDATE user_notification SET is_read = 1 WHERE user_id = ? AND is_read = 0').bind(userId).run()
   return jsonResp({ code: 200, msg: '操作成功', data: { count: result.meta?.changes || 0 } })
+}
+
+/** 删除通知 POST /api/notification/delete { id? }：传 id 删单条；read=1 清空已读；all=1 清空全部（仅自己收到的） */
+async function handleDeleteNotification(request, env) {
+  const userId = String(getRequestUserId(request))
+  const body = await request.json().catch(() => ({}))
+  const id = Number(body.id) || 0
+  let result
+  if (id) {
+    result = await env.DB.prepare('DELETE FROM user_notification WHERE id = ? AND user_id = ?').bind(id, userId).run()
+  } else if (body.read === 1 || body.read === true) {
+    result = await env.DB.prepare('DELETE FROM user_notification WHERE user_id = ? AND is_read = 1').bind(userId).run()
+  } else if (body.all === 1 || body.all === true) {
+    result = await env.DB.prepare('DELETE FROM user_notification WHERE user_id = ?').bind(userId).run()
+  } else {
+    return jsonResp({ code: 400, msg: '参数错误', data: null })
+  }
+  return jsonResp({ code: 200, msg: '已删除', data: { count: result.meta?.changes || 0 } })
 }

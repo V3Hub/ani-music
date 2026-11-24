@@ -100,7 +100,8 @@ function buildProfile(iconBase64: string | null) {
   <array>
     <dict>
       <key>FullScreen</key>
-      <true/>${iconEntry}
+      <true/>
+      ${iconEntry}
       <key>IconURL</key>
       <string>${iconUrl}</string>
       <key>IgnoreManifestScope</key>
@@ -128,7 +129,7 @@ function buildProfile(iconBase64: string | null) {
     </dict>
   </array>
   <key>PayloadDescription</key>
-  <string>${CLIP_LABEL} 轻量版${VERSION_SUFFIX}，安装后在桌面创建快捷方式</string>
+  <string>${CLIP_LABEL} 轻量版${VERSION_SUFFIX}</string>
   <key>PayloadDisplayName</key>
   <string>${CLIP_LABEL} 轻量版</string>
   <key>PayloadIdentifier</key>

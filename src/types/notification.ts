@@ -1,5 +1,5 @@
-/** 站内消息通知：别人回复你的评论 / 在你的心愿下留言 / 给你留言 */
-export type NotificationType = 'comment_reply' | 'wish_message' | 'user_message'
+/** 站内消息通知：别人回复你的评论 / 在你的心愿下留言 / 给你留言 / 管理员回复留言 */
+export type NotificationType = 'comment_reply' | 'wish_message' | 'user_message' | 'admin_message' | 'admin_reply'
 
 export interface UserNotification {
   id: number
@@ -16,6 +16,8 @@ export interface UserNotification {
   targetId: number
   /** 歌曲名 / 心愿内容摘要 */
   targetTitle: string
+  /** comment_reply 时为被回复评论的 id，用于"在通知上直接回复"时作为 parentId */
+  refId?: number
   read: boolean
   /** 毫秒时间戳 */
   createTime: number

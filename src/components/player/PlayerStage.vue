@@ -244,7 +244,8 @@ function onSliderDragEnd() {
     height: 100%;
     display: flex;
     flex-direction: column;
-    padding: 35px 20px 60px;
+    justify-content: space-between;
+    padding: 35px 20px 65px;
     box-sizing: border-box;
     overflow: hidden;
   }
@@ -430,8 +431,8 @@ function onSliderDragEnd() {
     position: relative;
     margin-top: 18px;
     flex-shrink: 0;
-    height: 3px;
-    border-radius: 3px;
+    height: 2px;
+    border-radius: 2px;
     background: rgba(255, 255, 255, 0.2);
 
     // 已缓冲部分（位于滑块轨道下方）
@@ -439,8 +440,8 @@ function onSliderDragEnd() {
       position: absolute;
       top: 0;
       left: 0;
-      height: 3px;
-      border-radius: 3px;
+      height: 2px;
+      border-radius: 2px;
       background: rgba(255, 255, 255, 0.42);
       transition: width 0.2s linear;
       pointer-events: none;

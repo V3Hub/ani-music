@@ -72,6 +72,12 @@
                 <van-icon name="arrow" size="14" class="item-arrow" />
               </span>
             </li>
+            <li class="section-item" @click="emit('adminMessages')">
+              <span class="item-label">用户留言</span>
+              <span class="item-value">
+                <van-icon name="arrow" size="14" class="item-arrow" />
+              </span>
+            </li>
           </ul>
         </section>
 
@@ -101,6 +107,12 @@
         <section class="settings-section">
           <div class="section-title">其他</div>
           <ul class="section-list">
+            <li class="section-item" @click="emit('contactAdmin')">
+              <span class="item-label">联系管理员</span>
+              <span class="item-value">
+                <van-icon name="arrow" size="14" class="item-arrow" />
+              </span>
+            </li>
             <li class="section-item" @click="emit('about')">
               <span class="item-label">
                 关于
@@ -222,6 +234,8 @@ const emit = defineEmits<{
   (e: 'adminReview'): void
   (e: 'adminErrorLogs'): void
   (e: 'adminSongTags'): void
+  (e: 'adminMessages'): void
+  (e: 'contactAdmin'): void
 }>()
 
 /** 存在历史账号时才展示账号分组 */
