@@ -16,6 +16,13 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.1.11',
+    date: '2026-11-24',
+    items: [
+      { type: 'feat', text: '联系管理员对话、播放队列拖拽排序、通知中心双向消息与数据库读取优化' },
+    ],
+  },
+  {
     version: '0.1.10',
     date: '2026-11-20',
     items: [
