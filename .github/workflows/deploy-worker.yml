@@ -7,7 +7,7 @@ on:
       - main
     paths:
       - 'apps/worker/**'
-      - '.github/workflows/deploy-worker.yml'
+      - .github/workflows/deploy-worker.yml
   workflow_dispatch:
 
 # 同一时间只允许一个部署任务，新的提交会取消排队中的旧任务

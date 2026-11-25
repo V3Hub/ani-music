@@ -44,22 +44,33 @@ export async function handleAdminListUsers(request, env) {
      ORDER BY id DESC LIMIT ? OFFSET ?`,
   ).bind(...params, pageSize, (page - 1) * pageSize).all()
 
-  const list = (results || []).map((row) => {
-    const obj = {
-      id: row.id,
-      username: row.username || '',
-      nickname: row.nickname || '',
-      avatar_url: row.avatar_url || '',
-      is_admin: !!row.is_admin,
-      vip_level: Number(row.vip_level) || 0,
-      status: row.status || 'active',
-      ban_reason: row.ban_reason || '',
-      ban_time: row.ban_time || '',
-      ban_until: row.ban_until || '',
-      create_time: row.create_time || '',
-    }
-    return obj
-  })
+  // 批量从 KV 取最近访问 IP（key: user_ip:{id}，TTL 30 天，过期则空）
+  const rows = results || []
+  const ipMap = new Map()
+  if (env.HOT_KV && rows.length) {
+    try {
+      const kv = env.HOT_KV
+      await Promise.all(rows.map(async r => {
+        const ip = await kv.get(`user_ip:${r.id}`)
+        if (ip) ipMap.set(r.id, ip)
+      }))
+    } catch {}
+  }
+
+  const list = rows.map((row) => ({
+    id: row.id,
+    username: row.username || '',
+    nickname: row.nickname || '',
+    avatar_url: row.avatar_url || '',
+    is_admin: !!row.is_admin,
+    vip_level: Number(row.vip_level) || 0,
+    status: row.status || 'active',
+    ban_reason: row.ban_reason || '',
+    ban_time: row.ban_time || '',
+    ban_until: row.ban_until || '',
+    create_time: row.create_time || '',
+    last_login_ip: ipMap.get(row.id) || '',
+  }))
 
   return jsonResp({
     code: 200,

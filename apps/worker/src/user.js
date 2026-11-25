@@ -1,4 +1,4 @@
-import { formatBanUntil, generateToken, getUserIdFromToken, isBanActive, requireActiveUser } from './auth.js'
+import { formatBanUntil, generateToken, getClientIp, getUserIdFromToken, isBanActive, requireActiveUser } from './auth.js'
 import { APP_CONFIG } from './config.js'
 import { jsonResp } from './http.js'
 
@@ -152,6 +152,12 @@ export async function handleUserLogin(request, env) {
     ).bind(row.id).run()
   }
   await touchLastLogin(env, row.id)
+  // 登录时写 KV 记录 IP（登录走 PUBLIC_PATHS，index.js 里那步不执行）
+  try {
+    const ip = getClientIp(request)
+    if (ip && env.HOT_KV)
+      env.HOT_KV.put(`user_ip:${row.id}`, ip, { expirationTtl: 2_592_000 })
+  } catch {}
   return jsonResp({
     code: 200,
     msg: '登录成功',

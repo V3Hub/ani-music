@@ -85,6 +85,9 @@
           <div v-if="item.status === 'banned'" class="ban-reason">
             {{ item.ban_until ? `解封时间：${item.ban_until.slice(0, 16)}` : '永久封禁' }}
           </div>
+          <div class="info-meta" v-if="item.last_login_ip">
+            <span>IP {{ item.last_login_ip }}</span>
+          </div>
           <span class="create-time">注册 {{ item.create_time?.slice(0, 16) || '-' }}</span>
         </div>
         <button
@@ -143,6 +146,14 @@
           </button>
           <button type="button" class="action-item" @click="openResetDialog(target)">
             重置密码
+          </button>
+          <button
+            v-if="target.last_login_ip"
+            type="button"
+            class="action-item danger"
+            @click="confirmBanIp(target)"
+          >
+            拉黑 IP：{{ target.last_login_ip }}
           </button>
           <button
             v-if="!target.is_admin"
@@ -213,6 +224,7 @@
 
 <script setup lang="ts">
 import {
+  addIpBlacklist,
   banUser,
   deleteUser,
   getAdminUsers,
@@ -377,6 +389,24 @@ async function confirmDelete(item: AdminUserItem) {
     await deleteUser(item.id)
     showToast('已删除')
     loadList(page.value)
+  } catch { /* request 已 toast */ }
+}
+
+async function confirmBanIp(item: AdminUserItem) {
+  menuVisible.value = false
+  try {
+    await showConfirmDialog({
+      title: '拉黑 IP',
+      message: `确定将 ${item.last_login_ip} 加入黑名单吗？该 IP 下所有账号将无法登录。`,
+      confirmButtonText: '拉黑',
+      confirmButtonColor: '#ff5c7c',
+    })
+  } catch {
+    return
+  }
+  try {
+    await addIpBlacklist(item.last_login_ip, `关联用户 ${item.nickname || item.username}（ID ${item.id}）`)
+    showToast(`已拉黑 ${item.last_login_ip}`)
   } catch { /* request 已 toast */ }
 }
 

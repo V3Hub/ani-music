@@ -51,6 +51,14 @@ export default {
           return jsonResp({ code: 401, msg: '账号已失效，请重新登录' }, 401)
         // 写入当前请求上下文，业务方法用 getRequestUserId 直接读取
         requestUserIds.set(request, userId)
+
+        // KV 记录用户最近访问 IP（key: user_ip:{userId}，TTL 30 天）
+        try {
+          const ip = getClientIp(request)
+          if (ip && env.HOT_KV) {
+            env.HOT_KV.put(`user_ip:${userId}`, ip, { expirationTtl: 2_592_000 })
+          }
+        } catch {}
       }
 
       // 业务接口：查路由表统一分发
