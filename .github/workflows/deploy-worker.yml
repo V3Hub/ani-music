@@ -1,0 +1,36 @@
+name: Deploy Worker
+
+# 只有 Worker 相关文件变更时才部署，前端改动不会触发
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/worker/**'
+      - apps/worker/wrangler.toml
+      - .github/workflows/deploy-worker.yml
+  workflow_dispatch:
+
+# 同一时间只允许一个部署任务，新的提交会取消排队中的旧任务
+concurrency:
+  group: deploy-worker
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Deploy to Cloudflare Workers
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: --config apps/worker/wrangler.toml deploy

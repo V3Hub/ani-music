@@ -74,31 +74,45 @@
 ## 目录结构
 
 ```text
-ani-music/
-├─ public/                 # 静态资源
-├─ src/
-│  ├─ api/                 # 接口封装（music / user / wish）
-│  ├─ components/
-│  │  ├─ player/           # 播放页、工具栏、队列、评论、搜索等
-│  │  ├─ playlist/         # 歌单卡片、详情抽屉、操作面板
-│  │  ├─ discover/         # 发现页
-│  │  ├─ owner/            # 「我的」页
-│  │  ├─ welfare/          # 福利页
-│  │  ├─ wish/             # 心愿墙
-│  │  └─ waveBox/          # 音频可视化
-│  ├─ composables/         # 组合式逻辑（播放、列表、滑动关闭等）
-│  ├─ constants/           # 常量配置
-│  ├─ router/              # 路由
-│  ├─ services/            # 音频播放器、歌词缓存、主题色、远程控制
-│  ├─ stores/              # Pinia（播放器、用户、资料）
-│  ├─ styles/              # 全局样式与设计变量
-│  ├─ types/               # 类型定义
-│  ├─ utils/               # 请求、头像、分享、下载等工具
-│  └─ views/               # 页面入口（PlayerView / LoginView）
-├─ worker/
-│  └─ music-core-worker.js # Cloudflare Worker 后端（D1）
-├─ vite.config.ts
-└─ package.json
+ani-music/                 # pnpm workspace 根
+├─ apps/
+│  ├─ web/                 # 前端应用（Vue 3 + Vite）
+│  │  ├─ index.html
+│  │  ├─ vite.config.ts
+│  │  ├─ tsconfig.app.json
+│  │  ├─ tsconfig.node.json
+│  │  ├─ uno.config.ts
+│  │  ├─ .env / .env.development
+│  │  ├─ public/           # 静态资源
+│  │  └─ src/
+│  │     ├─ api/           # 接口封装（music / user / wish）
+│  │     ├─ components/
+│  │     │  ├─ player/     # 播放页、工具栏、队列、评论、搜索等
+│  │     │  ├─ playlist/   # 歌单卡片、详情抽屉、操作面板
+│  │     │  ├─ discover/   # 发现页
+│  │     │  ├─ owner/      # 「我的」页
+│  │     │  ├─ welfare/   # 福利页
+│  │     │  ├─ wish/       # 心愿墙
+│  │     │  └─ waveBox/    # 音频可视化
+│  │     ├─ composables/   # 组合式逻辑（播放、列表、滑动关闭等）
+│  │     ├─ constants/     # 常量配置
+│  │     ├─ router/        # 路由
+│  │     ├─ services/      # 音频播放器、歌词缓存、主题色、远程控制
+│  │     ├─ stores/        # Pinia（播放器、用户、资料）
+│  │     ├─ styles/        # 全局样式与设计变量
+│  │     ├─ types/         # 类型定义
+│  │     ├─ utils/         # 请求、头像、分享、下载等工具
+│  │     └─ views/         # 页面入口（PlayerView / LoginView）
+│  │
+│  └─ worker/              # Cloudflare Worker 后端（D1）
+│     ├─ wrangler.toml     # Cloudflare 部署配置
+│     └─ src/              # 按功能拆分的 23 个模块
+│
+├─ pnpm-workspace.yaml
+├─ package.json            # workspace 根（scripts 代理到各包）
+├─ tsconfig.json           # references 指向 apps/*
+├─ eslint.config.mjs
+└─ README.md
 ```
 
 ## 快速开始
@@ -106,26 +120,29 @@ ani-music/
 环境要求：Node.js >= 24，pnpm >= 12。
 
 ```bash
-# 安装依赖
+# 安装依赖（整个 workspace）
 pnpm install
 
-# 启动开发服务（默认 http://localhost:5173）
+# 启动前端开发服务（默认 http://localhost:5173）
 pnpm dev
 
-# 类型检查 + 生产构建
+# 类型检查 + 生产构建前端
 pnpm build
 
-# 本地预览构建产物
+# 本地预览前端构建产物
 pnpm preview
 
 # 代码检查
 pnpm lint
 pnpm lint:fix
+
+# 构建（仅打包，不上传）Worker
+pnpm build:worker
 ```
 
 ## 环境变量
 
-仓库根目录的 `.env` 为公共配置，`.env.development` 仅在本地开发生效。
+前端的 `.env` / `.env.development` 位于 `apps/web/` 下。
 
 | 变量                    | 说明                                         |
 | ----------------------- | -------------------------------------------- |
@@ -151,7 +168,16 @@ pnpm lint:fix
 
 ## 后端 Worker
 
-后端位于 `worker/music-core-worker.js`，基于 Cloudflare Worker + D1，入口按路径分发：
+后端位于 `apps/worker/src/`，入口 `index.js`，基于 Cloudflare Worker + D1，按路径分发：
+
+- `config.js` / `http.js` / `upstream.js`：常量配置、统一响应、上游歌曲与搜索接口地址
+- `auth.js`：token 签发与校验、来源与爬虫校验、封禁状态校验、管理员校验
+- `router.js`：路由表与免登录白名单
+- `user.js` / `user-message.js`：账号、资料、私信
+- `admin.js` / `admin-message.js` / `error-log.js`：用户管理、留言、错误日志
+- `song.js` / `hot.js` / `search.js` / `theme-color.js`：歌曲、推荐、搜索、主题色
+- `playlist.js` / `share.js` / `comment.js` / `tag.js`：歌单、分享、评论、标签
+- `wish.js` / `notify.js` / `notification.js`：心愿墙、通知写入与通知接口
 
 - 用户：自动登录、账号登录、资料查询与修改
 - 会员：注册申请、审批进度、管理员审批、VIP 调级与变更记录

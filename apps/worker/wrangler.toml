@@ -1,0 +1,22 @@
+# Cloudflare Worker 部署配置
+name = "music-core-worker"
+main = "./src/index.js"
+compatibility_date = "2024-09-23"
+
+workers_dev = true
+
+# —— 普通变量 ——
+[vars]
+HOT_CACHE_TTL = "300"
+
+# —— D1 数据库 ——
+[[d1_databases]]
+binding = "DB"
+database_name = "music-core-db"
+database_id = "b8968ed6-0a25-4b99-b0bc-b033fa13e401"
+
+# —— KV 缓存 ——
+[[kv_namespaces]]
+binding = "HOT_KV"
+id = "82e3cd16981c4858aee7dadb3b52af34"
+
