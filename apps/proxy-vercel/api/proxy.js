@@ -75,7 +75,9 @@ module.exports = async function handler(req, res) {
     res.setHeader('Cache-Control', 'no-store')
     res.end(body)
   } catch (err) {
-    json(res, { code: 502, msg: '上游请求失败', region: procEnv.VERCEL_REGION || '', detail: `${err.name}: ${err.message}` }, 502)
+    // dbg 模式用 599 区分"fetch 失败"，便于外部探测服务直接读状态码判断
+    const status = isDebug ? 599 : 502
+    json(res, { code: status, msg: '上游请求失败', region: procEnv.VERCEL_REGION || '', detail: `${err.name}: ${err.message}` }, status)
   } finally {
     clearTimeout(timer)
   }
