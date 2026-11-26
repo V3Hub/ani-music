@@ -13,7 +13,7 @@ const { isChinaTarget } = require('../lib/cn-detector')
 const { getProxies, getCacheStats } = require('../lib/proxy-pool')
 
 const REQUEST_TIMEOUT_MS = 15000
-const PROXY_MAX_RETRIES = 3
+const PROXY_MAX_RETRIES = 5 // 池里已预过滤过，5 次足够覆盖偶发失效
 
 module.exports = async function handler(req, res) {
   const url = new URL(req.url, `https://${req.headers.host || 'localhost'}`)
