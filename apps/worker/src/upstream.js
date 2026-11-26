@@ -2,14 +2,15 @@ import { APP_CONFIG } from './config.js'
 
 /**
  * bugu 上游按 Cloudflare 出口 IP 段封禁（返回 200 + 空 body），
- * 配置了 APP_CONFIG.buguProxy 时经反代（Vercel Edge）转发。
+ * 配置了 APP_CONFIG.buguProxy 时经反代（Vercel Serverless）转发。
+ * 反代 key 复用 SECRET_KEY，Vercel 侧 PROXY_KEY 配同一个值。
  * @param {string} directUrl 上游原始地址
  * @returns {string} 未配置反代时原样返回
  */
 function viaProxy(directUrl) {
   const prefix = APP_CONFIG.buguProxy
   if (!prefix) return directUrl
-  const key = APP_CONFIG.buguProxyKey
+  const key = APP_CONFIG.secretKey
   return `${prefix}${encodeURIComponent(directUrl)}${key ? `&key=${encodeURIComponent(key)}` : ''}`
 }
 
