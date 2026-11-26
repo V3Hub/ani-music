@@ -34,6 +34,28 @@ const DEFAULT_COUNTRIES = ['US', 'CN']
 /** 每个国家最多取多少候选，避免列表过大 */
 const PER_COUNTRY_CAP = 120
 
+// 免费列表里混了不少「TCP 能连但不是 HTTP 代理」的端口（SSH / SOCKS / 数据库等），
+// 它们会一直挂到超时才失败，白占样本，直接剔除
+const BOGUS_PORTS = new Set([
+  21,
+  22,
+  23,
+  25,
+  53,
+  110,
+  143,
+  465,
+  587,
+  993,
+  995,
+  1080,
+  4145,
+  3306,
+  5432,
+  6379,
+  27017,
+])
+
 // raw.githubusercontent 优先（CDN 缓存约 5 分钟），jsdelivr 的 @main 缓存可达 12h，仅兜底
 function listUrls(code) {
   return [
@@ -160,7 +182,8 @@ async function fetchCountry(code) {
           && typeof p.ip === 'string'
           && typeof p.port === 'number'
           && p.port > 0
-          && p.port < 65536)
+          && p.port < 65536
+          && !BOGUS_PORTS.has(p.port))
         .map(p => `${p.protocol}://${p.ip}:${p.port}`)
     } catch (err) {
       lastError = err
