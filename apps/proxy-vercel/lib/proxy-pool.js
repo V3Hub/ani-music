@@ -62,6 +62,18 @@ const state = {
 /** 进行中的列表拉取（并发请求共享同一个 Promise） */
 let inflight = null
 
+/** 归一化错误描述：区分超时 / 具体系统错误码（undici 把原因包在 err.cause 里） */
+function describeError(err) {
+  const cause = err && err.cause
+  const name = (cause && cause.name) || (err && err.name) || ''
+  if (name === 'AbortError' || name === 'TimeoutError')
+    return 'timeout'
+  const code = (cause && cause.code) || (err && err.code)
+  if (code)
+    return code
+  return (cause && cause.message) || (err && err.message) || 'unknown'
+}
+
 /** Fisher-Yates 洗牌（返回新数组） */
 function shuffle(list) {
   const arr = [...list]
@@ -293,7 +305,7 @@ async function raceProxies(target, options = {}) {
         })
         .catch(err => ({
           ok: false,
-          err: `${proxyUrl} ${err.name === 'AbortError' ? 'timeout' : err.message}`,
+          err: `${proxyUrl} ${describeError(err)}`,
         }))
     }))
 
