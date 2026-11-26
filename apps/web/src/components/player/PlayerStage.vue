@@ -281,8 +281,9 @@ function onSliderDragEnd() {
     }
 
     .lyric-container {
-      // 翻页效果：cubic-bezier 先快后慢，像翻书纸/吸附
-      transition: transform 320ms cubic-bezier(0.25, 1, 0.5, 1);
+      // 柔和翻页：Material standard 缓动（cubic-bezier(0.4, 0, 0.2, 1)），
+      // 先慢再轻快再柔停 —— 像从底部轻轻滑上来
+      transition: transform 450ms cubic-bezier(0.4, 0, 0.2, 1);
 
       .lyric-line {
         padding: 5px 0;
