@@ -272,7 +272,7 @@ function onSliderDragEnd() {
     flex: 0 0 71px;
     height: 71px;
     margin-top: 4px;
-    // 歌词只做程序化滚动：禁用手动滑动，避免与上下切歌手势冲突
+    // 歌词用 transform 翻页：禁用原生滚动
     overflow: hidden;
     scrollbar-width: none;
 
@@ -281,8 +281,8 @@ function onSliderDragEnd() {
     }
 
     .lyric-container {
-      // 底部留出一行：保证最后几行也能滚到顶部，始终显示完整两行
-      padding: 0 0 36px;
+      // 翻页效果：cubic-bezier 先快后慢，像翻书纸/吸附
+      transition: transform 320ms cubic-bezier(0.25, 1, 0.5, 1);
 
       .lyric-line {
         padding: 5px 0;

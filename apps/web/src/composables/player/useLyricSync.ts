@@ -92,23 +92,24 @@ export function useLyricSync() {
     }
   })
 
-  /** 当前行滚动到容器顶部：容器刚好容纳两行，下方始终显示完整的一行 */
+  /** 当前行翻页到容器顶部：用 transform 代替 scrollTo，自定义 cubic-bezier 实现翻页/吸附感 */
   watch(currentLine, async (index) => {
     const song = player.currentSong
     if (!song || index < 0)
       return
-    const container = lyricContainers.get(song.id)
-    if (!container)
+    const outer = lyricContainers.get(song.id)
+    if (!outer)
+      return
+    const inner = outer.querySelector('.lyric-container') as HTMLElement | null
+    if (!inner)
       return
     await nextTick()
-    const target = container.querySelectorAll('.lyric-line')[index] as HTMLElement | undefined
+    const target = inner.querySelectorAll('.lyric-line')[index] as HTMLElement | undefined
     if (!target)
       return
-    const containerRect = container.getBoundingClientRect()
-    const targetRect = target.getBoundingClientRect()
-    const offset = targetRect.top - containerRect.top + container.scrollTop
-    const maxScroll = container.scrollHeight - container.clientHeight
-    container.scrollTo({ top: Math.max(0, Math.min(offset, maxScroll)), behavior: 'smooth' })
+    // target.offsetTop 相对于 inner —— 直接设 translateY 即可
+    const top = target.offsetTop
+    inner.style.transform = `translateY(-${top}px)`
   })
 
   return { currentLine, registerLyricContainer }
