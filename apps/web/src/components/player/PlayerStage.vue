@@ -287,7 +287,7 @@ function onSliderDragEnd() {
 
       .lyric-line {
         padding: 5px 0;
-        font-size: 16px;
+        font-size: 18px;
         line-height: 1.6;
         text-align: left;
         color: var(--theme-text, #fff);
@@ -300,6 +300,7 @@ function onSliderDragEnd() {
           opacity 0.2s;
 
         &.active {
+          font-size: 22px;
           color: var(--theme-text, #fff);
           opacity: 1;
           font-weight: 500;
