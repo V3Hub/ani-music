@@ -1,12 +1,5 @@
 // Vercel Serverless Function — 通用 HTTP 反代
-//
-// 访问路径：/api/proxy?target=<encodeURIComponent(目标URL)>
-// 例：/api/proxy?target=https%3A%2F%2Fwww.buguyy.top%2Fapi%2Fsearch%3Fkeyword%3D%E7%88%B1%E4%BD%A0
-//
-// 作用：Cloudflare Worker 的出口 IP 段被上游封禁，这里借 Vercel 的出网 IP
-// （与 Cloudflare 不同 ASN）绕开黑名单。
-// 本目录带 package.json（type=commonjs），确保函数按 CJS 加载，
-// 不受仓库根 package.json 的 type=module 影响。
+// 访问路径：/api/proxy?key=<PROXY_KEY>&target=<encodeURIComponent(目标URL)>
 
 const { env: procEnv } = require('node:process')
 
@@ -23,7 +16,6 @@ module.exports = async function handler(req, res) {
   }
 
   const target = url.searchParams.get('target') || ''
-
   if (!target) {
     return json(res, { code: 400, msg: '缺少 target 参数' }, 400)
   }
@@ -32,15 +24,11 @@ module.exports = async function handler(req, res) {
   try {
     parsed = new URL(target)
   } catch {
-    return json(res, { code: 400, msg: 'target 不是合法 URL', target }, 400)
+    return json(res, { code: 400, msg: 'target 不是合法 URL' }, 400)
   }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    return json(res, { code: 400, msg: '仅支持 http/https', target }, 400)
+    return json(res, { code: 400, msg: '仅支持 http/https' }, 400)
   }
-
-  const isDebug = url.searchParams.get('dbg') === '1'
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 10000)
 
   try {
     const upstream = await fetch(target, {
@@ -51,21 +39,8 @@ module.exports = async function handler(req, res) {
         'Accept': 'application/json, text/plain, */*',
         'X-Requested-With': 'XMLHttpRequest',
       },
-      signal: controller.signal,
+      signal: AbortSignal.timeout(10000),
     })
-
-    // dbg=1：不回传上游原始响应，而是回传诊断信息（区分"上游返回 502"和"函数崩溃"）
-    if (isDebug) {
-      const text = await upstream.text()
-      return json(res, {
-        ok: true,
-        region: procEnv.VERCEL_REGION || '',
-        status: upstream.status,
-        ct: upstream.headers.get('content-type') || '',
-        len: text.length,
-        head: text.slice(0, 300),
-      })
-    }
 
     const body = new Uint8Array(await upstream.arrayBuffer())
 
@@ -74,12 +49,8 @@ module.exports = async function handler(req, res) {
     res.setHeader('Access-Control-Allow-Origin', '*')
     res.setHeader('Cache-Control', 'no-store')
     res.end(body)
-  } catch (err) {
-    // dbg 模式用 599 区分"fetch 失败"，便于外部探测服务直接读状态码判断
-    const status = isDebug ? 599 : 502
-    json(res, { code: status, msg: '上游请求失败', region: procEnv.VERCEL_REGION || '', detail: `${err.name}: ${err.message}` }, status)
-  } finally {
-    clearTimeout(timer)
+  } catch {
+    json(res, { code: 502, msg: '上游请求失败' }, 502)
   }
 }
 

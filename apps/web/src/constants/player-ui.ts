@@ -12,7 +12,6 @@ export interface PlaybackSourceOption {
 export const PLAYBACK_SOURCES: PlaybackSourceOption[] = [
   { label: '网抑云音乐', value: 'netease' },
   { label: '米兔音乐', value: 'mitu' },
-  { label: '布谷音乐', value: 'bugu' },
 ]
 
 /** 播放源标识 —— 即 PLAYBACK_SOURCES 中各项的 value */

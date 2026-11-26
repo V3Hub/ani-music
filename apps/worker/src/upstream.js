@@ -1,19 +1,3 @@
-import { APP_CONFIG } from './config.js'
-
-/**
- * bugu 上游按 Cloudflare 出口 IP 段封禁（返回 200 + 空 body），
- * 配置了 APP_CONFIG.buguProxy 时经反代（Vercel Serverless）转发。
- * 反代 key 复用 SECRET_KEY，Vercel 侧 PROXY_KEY 配同一个值。
- * @param {string} directUrl 上游原始地址
- * @returns {string} 未配置反代时原样返回
- */
-function viaProxy(directUrl) {
-  const prefix = APP_CONFIG.buguProxy
-  if (!prefix) return directUrl
-  const key = APP_CONFIG.secretKey
-  return `${prefix}${encodeURIComponent(directUrl)}${key ? `&key=${encodeURIComponent(key)}` : ''}`
-}
-
 export function buildSongApiUrl(source, id) {
   const rid = encodeURIComponent(id)
   switch (source) {
@@ -21,8 +5,6 @@ export function buildSongApiUrl(source, id) {
       return `https://api.qijieya.cn/meting/?type=song&id=${rid}`
     case 'mitu':
       return `https://www.qqmp3.vip/api/kw.php?rid=${rid}&type=json&level=exhigh&lrc=true`
-    case 'bugu':
-      return viaProxy(`https://www.buguyy.top/api/geturl?id=${rid}`)
     default:
       return ''
   }
@@ -39,8 +21,6 @@ export function buildSearchApiUrl(source, keyword, page, num) {
       return `https://api.vkeys.cn/v2/music/netease?word=${word}&page=${page}&num=${num}`
     case 'mitu':
       return `https://www.qqmp3.vip/api/songs.php?type=search&keyword=${word}`
-    case 'bugu':
-      return viaProxy(`https://www.buguyy.top/api/search?keyword=${word}`)
     default:
       return ''
   }
