@@ -281,8 +281,9 @@ function onSliderDragEnd() {
     }
 
     .lyric-container {
-      // 柔和翻页：Material standard 缓动（cubic-bezier(0.4, 0, 0.2, 1)），
-      // 先慢再轻快再柔停 —— 像从底部轻轻滑上来
+      // 最后几行滚到顶部时底下留出一行的呼吸空间
+      padding-bottom: 36px;
+      // 柔和翻页：Material standard 缓动
       transition: transform 450ms cubic-bezier(0.4, 0, 0.2, 1);
 
       .lyric-line {

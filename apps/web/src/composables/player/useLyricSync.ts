@@ -107,8 +107,9 @@ export function useLyricSync() {
     const target = inner.querySelectorAll('.lyric-line')[index] as HTMLElement | undefined
     if (!target)
       return
-    // target.offsetTop 相对于 inner —— 直接设 translateY 即可
-    const top = target.offsetTop
+    // clamp 到 [0, maxOffset]，避免最后一行 translate 超出范围
+    const maxOffset = inner.scrollHeight - outer.clientHeight
+    const top = Math.min(target.offsetTop, Math.max(0, maxOffset))
     inner.style.transform = `translateY(-${top}px)`
   })
 
