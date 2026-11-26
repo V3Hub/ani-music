@@ -34,7 +34,7 @@ export default async function handler(req, res) {
     const upstream = await fetch(target, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-        'Referer': targetUrl.origin + '/',
+        'Referer': `${targetUrl.origin}/`,
         'Origin': targetUrl.origin,
         'Accept': 'application/json, text/plain, */*',
         'X-Requested-With': 'XMLHttpRequest',
@@ -42,7 +42,7 @@ export default async function handler(req, res) {
       signal: controller.signal,
     })
 
-    const body = Buffer.from(await upstream.arrayBuffer())
+    const body = new Uint8Array(await upstream.arrayBuffer())
 
     res.statusCode = upstream.status
     res.setHeader('Content-Type', upstream.headers.get('content-type') || 'application/json')
