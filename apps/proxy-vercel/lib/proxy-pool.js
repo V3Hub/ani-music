@@ -159,6 +159,13 @@ function firstSuccess(promises) {
   })
 }
 
+// 嗅探目标：百度首页最稳定，能打通说明该代理真的能出网
+const PROBE_URL = 'https://www.baidu.com/'
+const PROBE_TIMEOUT_MS = 2500
+const PROBE_CONCURRENCY = 50
+/** 嗅探阶段最多占用多少毫秒，剩下的预算留给竞速 */
+const PROBE_BUDGET_MS = 8000
+
 /** 拉取单个国家的代理列表（多源容灾） */
 async function fetchCountry(code) {
   let lastError = new Error(`${code} 拉取失败`)
@@ -193,8 +200,47 @@ async function fetchCountry(code) {
   throw lastError
 }
 
-/** 按区域优先级合并多国代理：https 排最前，其余按国家优先级 */
-async function buildList() {
+/** 用单个代理嗅探百度，能拿到任意响应即视为可用 */
+async function probeOne(proxyUrl) {
+  const agent = new ProxyAgent(proxyUrl)
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS)
+  try {
+    const res = await undiciFetch(PROBE_URL, {
+      dispatcher: agent,
+      signal: controller.signal,
+      redirect: 'manual',
+      headers: { 'User-Agent': UA, 'Accept': 'text/html' },
+    })
+    return res.status > 0
+  } catch {
+    return false
+  } finally {
+    clearTimeout(timer)
+    agent.close().catch(() => {})
+  }
+}
+
+/** 并发嗅探，只返回能打通百度的代理；到 deadline 提前收工 */
+async function probeProxies(list, deadline) {
+  const ok = []
+  let cursor = 0
+  const stopAt = deadline || Infinity
+
+  async function worker() {
+    while (cursor < list.length && Date.now() < stopAt) {
+      const proxy = list[cursor++]
+      if (await probeOne(proxy))
+        ok.push(proxy)
+    }
+  }
+
+  await Promise.all(Array.from({ length: PROBE_CONCURRENCY }, worker))
+  return ok
+}
+
+/** 按国家优先级合并代理，并用百度嗅探，只有能通的才进池 */
+async function buildList(deadline) {
   const countries = PROXY_COUNTRIES
 
   const groups = await Promise.all(countries.map(code =>
@@ -217,16 +263,29 @@ async function buildList() {
     }
   }
 
-  // https 代理只占队首前 6 个：列表里 https 条数少且实测大量不可用，
-  // 全部前置会浪费掉整批样本；其余 https 轮转到队尾，仍有机会被抽到
-  const https = merged.filter(p => p.startsWith('https://'))
-  const others = merged.filter(p => !p.startsWith('https://'))
-  console.info(`[proxy-pool] 国家=${countries.join('/')} 合计=${merged.length} https=${https.length}`)
+  if (merged.length === 0) {
+    console.warn('[proxy-pool] 未取到任何候选代理，沿用旧池')
+    return state.raw
+  }
+
+  // 先嗅探，只有能打通百度的才算可用代理进池
+  const probeDeadline = Math.min(deadline || Infinity, Date.now() + PROBE_BUDGET_MS)
+  const verified = await probeProxies(merged, probeDeadline)
+  console.info(`[proxy-pool] 国家=${countries.join('/')} 候选=${merged.length} 嗅探通过=${verified.length}`)
+
+  if (verified.length === 0) {
+    console.warn('[proxy-pool] 百度嗅探无一通过，沿用旧池')
+    return state.raw
+  }
+
+  // https 代理只占队首前 6 个：实测 https 条目大量不可用，全部前置会浪费整批样本
+  const https = verified.filter(p => p.startsWith('https://'))
+  const others = verified.filter(p => !p.startsWith('https://'))
   return https.slice(0, 6).concat(others, https.slice(6))
 }
 
 /** 取原始列表；超过 5 分钟则刷新，刷新失败保留旧值 */
-async function getRawList(force = false) {
+async function getRawList(force = false, deadline) {
   const fresh = state.raw.length > 0 && Date.now() - state.rawFetchedAt < LIST_TTL_MS
   if (!force && fresh)
     return state.raw
@@ -236,7 +295,7 @@ async function getRawList(force = false) {
   state.fetching = true
   inflight = (async () => {
     try {
-      const raw = await buildList()
+      const raw = await buildList(deadline)
       state.raw = raw
       state.rawFetchedAt = Date.now()
       state.lastError = ''
@@ -298,7 +357,7 @@ async function raceProxies(target, options = {}) {
 
   // 2. 竞速：buildList 已按 https 优先 + 国家优先级排好；
   //    每次请求把取样窗口向后轮转一批，避免 5 分钟内反复只试前 30 个
-  const raw = await getRawList()
+  const raw = await getRawList(false, deadline)
   if (raw.length === 0)
     throw new Error('代理列表为空')
   const slot = Math.max(1, Math.ceil(raw.length / batchSize))
