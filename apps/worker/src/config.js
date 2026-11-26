@@ -16,10 +16,13 @@ export const DEFAULT_HOT_CACHE_TTL = 300
  * 运行期可变配置。
  * - secretKey：token 签名 + 密码哈希的统一密钥（**敏感，必需由 env.SECRET_KEY 注入，缺失抛错**）
  * - allowedOrigins：来源白名单（前缀匹配），由 env.ALLOWED_ORIGINS 逗号分隔注入；空数组 = 不限制任何来源
+ * - proxyUrl：Vercel 反代函数地址（env.PROXY_URL），供 /api/tool/proxy 使用；空串 = 未启用
+ *   反代校验的 key 复用 secretKey（Vercel 侧 PROXY_KEY 配同一个值）
  */
 export const APP_CONFIG = {
   secretKey: '',
   allowedOrigins: [],
+  proxyUrl: '',
 }
 
 /**
@@ -49,6 +52,8 @@ export function applyEnvOverrides(env) {
       .filter(Boolean)
     if (list.length) APP_CONFIG.allowedOrigins = list
   }
+
+  APP_CONFIG.proxyUrl = String(env.PROXY_URL ?? '').trim()
 }
 
 /** 读取热点榜缓存 TTL：env 缺失回退 300，非法值收敛到 [10, 3600] */

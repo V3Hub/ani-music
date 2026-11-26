@@ -50,14 +50,14 @@ export async function handleAdminListUsers(request, env) {
   if (env.HOT_KV && rows.length) {
     try {
       const kv = env.HOT_KV
-      await Promise.all(rows.map(async r => {
+      await Promise.all(rows.map(async (r) => {
         const ip = await kv.get(`user_ip:${r.id}`)
         if (ip) ipMap.set(r.id, ip)
       }))
     } catch {}
   }
 
-  const list = rows.map((row) => ({
+  const list = rows.map(row => ({
     id: row.id,
     username: row.username || '',
     nickname: row.nickname || '',

@@ -10,6 +10,7 @@ import { handleCreateShareToken, handleGetPlaylistShareCount, handleGetSongShare
 import { handleGetSongDetail, handleUpsertSong } from './song.js'
 import { handleAddSongTag, handleAdminDeleteSongTag, handleAdminDeleteSongTagByName, handleAdminListSongTags, handleDeleteSongTag, handleGetHotSongTags, handleGetSongTags } from './tag.js'
 import { handleGetSongThemeColor, handleUpdateSongMeta } from './theme-color.js'
+import { handleToolProxy } from './tool-proxy.js'
 import { handleDeleteUserMessage, handleGetUserMessages, handleReplyUserMessage, handleSendUserMessage } from './user-message.js'
 import { handleAutoLogin, handleChangePassword, handleGetPublicUserProfile, handleGetUserProfile, handleRegister, handleRegisterStatus, handleUpdateUserProfile, handleUserLogin } from './user.js'
 import { handleAddWish, handleAddWishMessage, handleDeleteWish, handleGetWishMessages, handleGetWishes, handleToggleWishLike } from './wish.js'
@@ -100,6 +101,7 @@ export const ROUTES = {
   '/api/playlist/share': { GET: handleGetPlaylistShareCount, POST: handleReportPlaylistShare },
   '/api/song/theme-color': { GET: handleGetSongThemeColor },
   '/api/song/meta': { POST: handleUpdateSongMeta },
+  '/api/tool/proxy': { GET: handleToolProxy },
 }
 
 /** 免 token 白名单：自动登录；播放直链跳转（audio 元素请求无法携带 Authorization 头） */
