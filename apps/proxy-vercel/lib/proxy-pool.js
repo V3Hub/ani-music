@@ -96,6 +96,19 @@ function describeError(err) {
   return (cause && cause.message) || (err && err.message) || 'unknown'
 }
 
+/** 把失败原因聚合成 `timeoutx58, ECONNREFUSEDx2` 这种一眼能看的摘要 */
+function summarizeErrors(errors) {
+  const counts = new Map()
+  for (const line of errors) {
+    const reason = line.slice(line.lastIndexOf(' ') + 1)
+    counts.set(reason, (counts.get(reason) || 0) + 1)
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([reason, count]) => `${reason}x${count}`)
+    .join(', ')
+}
+
 /** Fisher-Yates 洗牌（返回新数组） */
 function shuffle(list) {
   const arr = [...list]
@@ -340,7 +353,7 @@ async function raceProxies(target, options = {}) {
     errors.push(...result.errors)
   }
 
-  throw new Error(`代理竞速失败（尝试 ${tried} 个）: ${errors.slice(0, 3).join(' | ')}`)
+  throw new Error(`代理竞速失败（尝试 ${tried} 个: ${summarizeErrors(errors)}）示例: ${errors.slice(0, 2).join(' | ')}`)
 }
 
 function getCacheStats() {
