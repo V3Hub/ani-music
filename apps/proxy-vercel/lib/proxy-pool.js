@@ -53,11 +53,12 @@ function listUrls(code) {
   ]
 }
 
-/** 竞速默认参数：整体预算 20s（含拉列表与嗅探），单代理 9s，每批 100 并发 */
+/** 竞速默认参数：整体预算 20s，单代理 8s，每批 25 并发 */
 const DEFAULTS = {
   deadlineMs: 20000,
-  attemptMs: 9000,
-  batchSize: 100,
+  attemptMs: 8000,
+  // 并发不能太高：冷启动容器开 100 条外连会把 socket/NAT 打爆，全部挂到超时
+  batchSize: 25,
 }
 
 const state = {
@@ -163,10 +164,10 @@ function firstSuccess(promises) {
 // 嗅探目标：默认百度首页（可用 env.PROBE_URL 覆盖）
 // 注意百度对代理 IP 有拦截，可能产生假阴性
 const PROBE_URL = procEnv.PROBE_URL || 'https://www.qq.com/'
-const PROBE_TIMEOUT_MS = 2500
-const PROBE_CONCURRENCY = 50
+const PROBE_TIMEOUT_MS = 2000
+const PROBE_CONCURRENCY = 25
 /** 嗅探阶段最多占用多少毫秒，剩下的预算留给竞速 */
-const PROBE_BUDGET_MS = 8000
+const PROBE_BUDGET_MS = 10000
 
 /** 拉取单个国家的代理列表（多源容灾） */
 async function fetchCountry(code) {
@@ -280,7 +281,7 @@ async function buildList(deadline) {
   if (verified.length === 0) {
     // 百度会拦截代理 IP，嗅探全挂很可能是假阴性，
     // 此时用未嗅探的候选继续竞速，而不是把池子清空导致直接报「列表为空」
-    console.warn('[proxy-pool] 百度嗅探无一通过，回退未嗅探候选')
+    console.warn('[proxy-pool] 嗅探无一通过，回退未嗅探候选')
     return merged
   }
 
