@@ -268,9 +268,9 @@ function onSliderDragEnd() {
   }
 
   .lyric-scroll {
-    // 高度刚好容纳 2 行歌词，当前行居中、另一行完整显示，避免半行被裁切
-    flex: 0 0 71px;
-    height: 71px;
+    // 高度刚好容纳 2 行歌词（18px / 22px 字体 + 5px padding + 1.6 line-height）
+    flex: 0 0 82px;
+    height: 82px;
     margin-top: 4px;
     // 歌词用 transform 翻页：禁用原生滚动
     overflow: hidden;
