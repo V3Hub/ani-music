@@ -109,6 +109,7 @@ export async function handleSongStreamRedirect(request, _env) {
   }
   let finalUrl = ''
   let data
+  let upstream = null
   try {
     const fetchRes = await fetch(apiUrl, {
       signal: AbortSignal.timeout(10000),
@@ -118,7 +119,13 @@ export async function handleSongStreamRedirect(request, _env) {
         'Referer': new URL(apiUrl).origin,
       },
     })
-    data = await fetchRes.json().catch(() => null)
+    const raw = await fetchRes.text().catch(() => '')
+    try {
+      data = JSON.parse(raw)
+    } catch {
+      data = null
+    }
+    upstream = { status: fetchRes.status, ct: fetchRes.headers.get('content-type'), head: raw.slice(0, 160) }
     switch (source) {
       case 'netease': {
         const originUrl = data?.[0]?.url
@@ -144,7 +151,8 @@ export async function handleSongStreamRedirect(request, _env) {
     return jsonResp({ code: 500, msg: `服务繁忙: ${err.message}` })
   }
   if (!finalUrl) {
-    return jsonResp({ code: 404, msg: `资源不存在`, data })
+    // TEMP-DEBUG: 上游异常时回传诊断信息，定位后移除
+    return jsonResp({ code: 404, msg: `资源不存在`, data, upstream })
   }
   return Response.redirect(finalUrl, 302)
 }
