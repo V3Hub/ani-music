@@ -1,6 +1,6 @@
 {
   "name": "ani-music",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@12.0.0",
@@ -14,7 +14,10 @@
     "build:worker": "pnpm --filter @ani-music/worker build",
     "preview": "pnpm --filter @ani-music/web preview",
     "lint": "eslint .",
-    "lint:fix": "eslint . --fix"
+    "lint:fix": "eslint . --fix",
+    "release": "node apps/web/scripts/release.mjs",
+    "release:minor": "node apps/web/scripts/release.mjs minor",
+    "release:major": "node apps/web/scripts/release.mjs major"
   },
   "devDependencies": {
     "@antfu/eslint-config": "^10.0.0",

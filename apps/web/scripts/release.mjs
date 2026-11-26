@@ -27,9 +27,14 @@ import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const ROOT = resolve(__dirname, '..')
-const PKG_PATH = resolve(ROOT, 'package.json')
-const CHANGELOG_PATH = resolve(ROOT, 'src/constants/changelog.ts')
+// 支持从根目录调用（pnpm release）和从 apps/web 目录直接调用
+const WEB_ROOT = resolve(__dirname, '..')
+const REPO_ROOT = resolve(WEB_ROOT, '..', '..')
+const PKG_PATHS = [
+  resolve(REPO_ROOT, 'package.json'),         // 根 workspace
+  resolve(WEB_ROOT, 'package.json'),           // @ani-music/web
+]
+const CHANGELOG_PATH = resolve(WEB_ROOT, 'src/constants/changelog.ts')
 
 const args = process.argv.slice(2)
 const fromGitMessage = args.includes('--from-git-message')
@@ -44,7 +49,7 @@ const itemArgs = args.filter(a =>
 function readLatestCommitMessage() {
   try {
     return execFileSync('git', ['log', '-1', '--pretty=%B'], {
-      cwd: ROOT,
+      cwd: REPO_ROOT,
       encoding: 'utf-8',
     }).trim()
   } catch {
@@ -155,21 +160,29 @@ if (!items.length) {
   process.exit(0)
 }
 
-// 1. bump package.json
-const pkg = JSON.parse(readFileSync(PKG_PATH, 'utf-8'))
-const oldVersion = pkg.version
+// 1. bump 所有 package.json
+let oldVersion = null
+for (const PKG_PATH of PKG_PATHS) {
+  const pkg = JSON.parse(readFileSync(PKG_PATH, 'utf-8'))
+  if (!oldVersion) oldVersion = pkg.version
+  const newVersion = bump(oldVersion, level)
+
+  if (dryRun) {
+    console.log(`  [dry-run] ${oldVersion} → ${newVersion} (${PKG_PATH})`)
+    continue
+  }
+
+  pkg.version = newVersion
+  writeFileSync(PKG_PATH, `${JSON.stringify(pkg, null, 2)}\n`)
+  console.log(`  ${PKG_PATH}: ${oldVersion} → ${newVersion} (${level})`)
+}
 const newVersion = bump(oldVersion, level)
 
 if (dryRun) {
-  console.log(`  [dry-run] ${oldVersion} → ${newVersion}`)
   console.log(`  [dry-run] items:`)
   items.forEach(it => console.log(`    - ${it.type}: ${it.text}`))
   process.exit(0)
 }
-
-pkg.version = newVersion
-writeFileSync(PKG_PATH, `${JSON.stringify(pkg, null, 2)}\n`)
-console.log(`  package.json: ${oldVersion} → ${newVersion} (${level})`)
 
 // 2. 读取 changelog.ts，在 CHANGELOG 数组首项前插入新版本
 const changelogSrc = readFileSync(CHANGELOG_PATH, 'utf-8')
@@ -198,23 +211,23 @@ console.log(`  changelog.ts: 已追加 v${newVersion}`)
 // 3. 可选自动 commit（供 git 钩子触发时使用，--no-verify 避免循环触发 post-commit）
 if (autoCommit) {
   try {
-    execFileSync('git', ['add', 'package.json', 'src/constants/changelog.ts'], {
-      cwd: ROOT,
+    execFileSync('git', ['add', 'package.json', 'apps/web/package.json', 'apps/web/src/constants/changelog.ts'], {
+      cwd: REPO_ROOT,
       stdio: 'inherit',
     })
     execFileSync(
       'git',
       ['commit', '--no-verify', '-m', `chore(release): v${newVersion}`],
-      { cwd: ROOT, stdio: 'inherit' },
+      { cwd: REPO_ROOT, stdio: 'inherit' },
     )
     console.log(`\n✓ 已自动提交 release commit`)
   } catch (err) {
     console.error(`\n✗ 自动提交失败：${err.message}`)
-    console.log(`  请手动执行：git add package.json src/constants/changelog.ts && git commit -m "release: v${newVersion}"`)
+    console.log(`  请手动执行：git add package.json apps/web/package.json apps/web/src/constants/changelog.ts && git commit -m "release: v${newVersion}"`)
     process.exit(1)
   }
 } else {
   console.log(`\n✓ 版本更新完成`)
-  console.log(`  git add package.json src/constants/changelog.ts`)
-  console.log(`  git commit -m "release: v${newVersion}"`)
+  console.log(`  git add package.json apps/web/package.json apps/web/src/constants/changelog.ts`)
+  console.log(`  git commit -m "chore(release): v${newVersion}"`)
 }
