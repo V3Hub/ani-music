@@ -4,8 +4,8 @@
 // 例：/api/proxy?target=https%3A%2F%2Fwww.buguyy.top%2Fapi%2Fsearch%3Fkeyword%3D%E7%88%B1%E4%BD%A0
 //
 // 作用：Cloudflare Worker 的出口 IP 段被上游封禁，这里借 Vercel 的
-// 出网 IP（AWS Lambda，与 Cloudflare 不同 ASN）绕开黑名单。
-// 使用 Vercel 默认的 Node.js 运行时（不声明 edge），兼容性最好。
+// 出网 IP（与 Cloudflare 不同 ASN）绕开黑名单。
+// 使用 .mjs 扩展名显式声明 ESM，避免无 package.json 时被按 CommonJS 加载。
 
 // SSRF 防护：只允许反代这些上游
 const ALLOWED_ORIGINS = [
