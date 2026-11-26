@@ -32,7 +32,7 @@ async function fetchFromProxifly() {
   for (const url of PROXY_SOURCES) {
     try {
       const resp = await fetch(url, {
-        headers: { 'User-Agent': 'ani-music-proxy-vercel/1.0' },
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36' },
         signal: AbortSignal.timeout(8000),
       })
       if (!resp.ok) {
