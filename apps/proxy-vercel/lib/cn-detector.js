@@ -151,7 +151,7 @@ function isChinaTarget(url) {
 
   // 3. 子域名匹配 CN_SITES（api.foo.com 这种）
   for (const site of CN_SITES) {
-    if (host.endsWith('.' + site)) {
+    if (host.endsWith(`.${site}`)) {
       return true
     }
   }

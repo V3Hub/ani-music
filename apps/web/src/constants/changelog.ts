@@ -16,6 +16,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.1.12',
+    date: '2026-11-26',
+    items: [
+      { type: 'feat', text: '新增布谷音乐音源，接入 proxifly/free-proxy-list CN 代理池解决 Cloudflare/Vercel 出口 IP 封禁' },
+      { type: 'feat', text: 'Vercel Serverless Function 通用反代：自动检测中国站点、并发探测代理可用性、2 小时缓存刷新' },
+      { type: 'feat', text: '歌词滚动改用 transform + Material standard 缓动，从底部柔和翻页到顶部' },
+      { type: 'opt', text: 'Worker 自动 JSON.parse 兜底（反代回来偶发脏数据），upstream 源自动包反代' },
+    ],
+  },
+  {
     version: '0.1.11',
     date: '2026-11-24',
     items: [
