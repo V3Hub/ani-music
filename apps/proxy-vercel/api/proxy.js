@@ -89,7 +89,7 @@ async function fetchWithProxies(target, parsed) {
 
     try {
       const response = await undiciFetch(target, buildRequestOptions(parsed, agent))
-      console.log(
+      console.info(
         `[proxy] OK proxy=${proxyUrl} target=${parsed.hostname} status=${response.status}`,
       )
       return { response, proxy: proxyUrl }

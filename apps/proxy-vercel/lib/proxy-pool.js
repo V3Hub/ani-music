@@ -2,6 +2,7 @@
 // 从 GitHub 拉取中国区代理 → 并发探测可用性 → 只保留可用代理进池
 
 const { ProxyAgent, fetch: undiciFetch } = require('undici')
+const { Buffer } = require('node:buffer')
 
 // 代理池缓存 2 小时刷新一次
 const CACHE_TTL_MS = 2 * 60 * 60 * 1000
@@ -18,7 +19,7 @@ const PROXY_SOURCES = [
   'https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/countries/CN/data.json',
 ]
 
-let cache = {
+const cache = {
   proxies: [], // 已验证可用的代理列表
   lastFetch: 0,
   fetching: false,
@@ -34,9 +35,15 @@ async function fetchFromProxifly() {
         headers: { 'User-Agent': 'ani-music-proxy-vercel/1.0' },
         signal: AbortSignal.timeout(8000),
       })
-      if (!resp.ok) { lastError = new Error(`HTTP ${resp.status}`); continue }
+      if (!resp.ok) {
+        lastError = new Error(`HTTP ${resp.status}`)
+        continue
+      }
       const data = await resp.json()
-      if (!Array.isArray(data)) { lastError = new Error('响应不是数组'); continue }
+      if (!Array.isArray(data)) {
+        lastError = new Error('响应不是数组')
+        continue
+      }
 
       const list = data
         .filter(p => p && (p.protocol === 'http' || p.protocol === 'https')
@@ -44,7 +51,9 @@ async function fetchFromProxifly() {
           && p.port > 0 && p.port < 65536)
         .map(p => `${p.protocol}://${p.ip}:${p.port}`)
       return [...new Set(list)]
-    } catch (err) { lastError = err }
+    } catch (err) {
+      lastError = err
+    }
   }
   throw lastError || new Error('所有代理源均拉取失败')
 }
@@ -96,8 +105,11 @@ async function getProxies(force = false) {
 
   if (cache.fetching) {
     if (cache.proxies.length > 0) return cache.proxies
-    const poll = () => new Promise(resolve => {
-      const check = () => { if (!cache.fetching) resolve(cache.proxies); else setTimeout(check, 100) }
+    const poll = () => new Promise((resolve) => {
+      const check = () => {
+        if (!cache.fetching) resolve(cache.proxies)
+        else setTimeout(check, 100)
+      }
       check()
     })
     return poll()
@@ -118,7 +130,7 @@ async function getProxies(force = false) {
       cache.proxies = raw
     }
     cache.lastFetch = now
-    console.log(`[proxy-pool] fetched=${raw.length} probe_ok=${working.length} pool=${cache.proxies.length}`)
+    console.info(`[proxy-pool] fetched=${raw.length} probe_ok=${working.length} pool=${cache.proxies.length}`)
     return cache.proxies
   } catch (err) {
     console.error('[proxy-pool] 拉取代理失败:', err.message)
