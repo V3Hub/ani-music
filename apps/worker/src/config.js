@@ -17,11 +17,13 @@ export const DEFAULT_HOT_CACHE_TTL = 300
  * - secretKey：token 签名 + 密码哈希的统一密钥（**敏感，必需由 env.SECRET_KEY 注入，缺失抛错**）
  * - allowedOrigins：来源白名单（前缀匹配），由 env.ALLOWED_ORIGINS 逗号分隔注入；空数组 = 不限制任何来源
  * - buguProxy：bugu 上游反代前缀（env.BUGU_PROXY）；空串 = 直连上游
+ * - buguProxyKey：反代服务的 key（env.BUGU_PROXY_KEY，敏感，建议用 secret 注入）
  */
 export const APP_CONFIG = {
   secretKey: '',
   allowedOrigins: [],
   buguProxy: '',
+  buguProxyKey: '',
 }
 
 /**
@@ -54,6 +56,7 @@ export function applyEnvOverrides(env) {
 
   // —— 可选项：bugu 反代前缀，缺失 → 直连上游 ——
   APP_CONFIG.buguProxy = normalizeProxyPrefix(env.BUGU_PROXY)
+  APP_CONFIG.buguProxyKey = String(env.BUGU_PROXY_KEY ?? '').trim()
 }
 
 /**

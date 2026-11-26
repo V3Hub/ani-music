@@ -8,7 +8,9 @@ import { APP_CONFIG } from './config.js'
  */
 function viaProxy(directUrl) {
   const prefix = APP_CONFIG.buguProxy
-  return prefix ? prefix + encodeURIComponent(directUrl) : directUrl
+  if (!prefix) return directUrl
+  const key = APP_CONFIG.buguProxyKey
+  return `${prefix}${encodeURIComponent(directUrl)}${key ? `&key=${encodeURIComponent(key)}` : ''}`
 }
 
 export function buildSongApiUrl(source, id) {

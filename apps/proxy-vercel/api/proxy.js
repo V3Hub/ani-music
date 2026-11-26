@@ -8,8 +8,20 @@
 // 本目录带 package.json（type=commonjs），确保函数按 CJS 加载，
 // 不受仓库根 package.json 的 type=module 影响。
 
+const { env: procEnv } = require('node:process')
+
 module.exports = async function handler(req, res) {
   const url = new URL(req.url, `https://${req.headers.host || 'localhost'}`)
+
+  // key 校验：必须在 Vercel 项目环境变量里配置 PROXY_KEY
+  const expectedKey = procEnv.PROXY_KEY || ''
+  if (!expectedKey) {
+    return json(res, { code: 500, msg: '服务端未配置 PROXY_KEY' }, 500)
+  }
+  if ((url.searchParams.get('key') || '') !== expectedKey) {
+    return json(res, { code: 401, msg: 'key 校验失败' }, 401)
+  }
+
   const target = url.searchParams.get('target') || ''
 
   if (!target) {
