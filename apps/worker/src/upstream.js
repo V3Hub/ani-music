@@ -1,3 +1,16 @@
+import { APP_CONFIG } from './config.js'
+
+/**
+ * bugu 上游按 Cloudflare 出口 IP 段封禁（返回 200 + 空 body），
+ * 配置了 APP_CONFIG.buguProxy 时经反代（Vercel Edge）转发。
+ * @param {string} directUrl 上游原始地址
+ * @returns {string} 未配置反代时原样返回
+ */
+function viaProxy(directUrl) {
+  const prefix = APP_CONFIG.buguProxy
+  return prefix ? prefix + encodeURIComponent(directUrl) : directUrl
+}
+
 export function buildSongApiUrl(source, id) {
   const rid = encodeURIComponent(id)
   switch (source) {
@@ -6,7 +19,7 @@ export function buildSongApiUrl(source, id) {
     case 'mitu':
       return `https://www.qqmp3.vip/api/kw.php?rid=${rid}&type=json&level=exhigh&lrc=true`
     case 'bugu':
-      return `https://www.buguyy.top/api/geturl?id=${rid}`
+      return viaProxy(`https://www.buguyy.top/api/geturl?id=${rid}`)
     default:
       return ''
   }
@@ -24,7 +37,7 @@ export function buildSearchApiUrl(source, keyword, page, num) {
     case 'mitu':
       return `https://www.qqmp3.vip/api/songs.php?type=search&keyword=${word}`
     case 'bugu':
-      return `https://www.buguyy.top/api/search?keyword=${word}`
+      return viaProxy(`https://www.buguyy.top/api/search?keyword=${word}`)
     default:
       return ''
   }

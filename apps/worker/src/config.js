@@ -16,10 +16,12 @@ export const DEFAULT_HOT_CACHE_TTL = 300
  * 运行期可变配置。
  * - secretKey：token 签名 + 密码哈希的统一密钥（**敏感，必需由 env.SECRET_KEY 注入，缺失抛错**）
  * - allowedOrigins：来源白名单（前缀匹配），由 env.ALLOWED_ORIGINS 逗号分隔注入；空数组 = 不限制任何来源
+ * - buguProxy：bugu 上游反代前缀（env.BUGU_PROXY）；空串 = 直连上游
  */
 export const APP_CONFIG = {
   secretKey: '',
   allowedOrigins: [],
+  buguProxy: '',
 }
 
 /**
@@ -49,6 +51,21 @@ export function applyEnvOverrides(env) {
       .filter(Boolean)
     if (list.length) APP_CONFIG.allowedOrigins = list
   }
+
+  // —— 可选项：bugu 反代前缀，缺失 → 直连上游 ——
+  APP_CONFIG.buguProxy = normalizeProxyPrefix(env.BUGU_PROXY)
+}
+
+/**
+ * 规范化反代前缀：容忍末尾斜杠，自动补全 ?target=
+ * @param {unknown} raw 原始环境变量值
+ * @returns {string} 空串表示不启用反代
+ */
+function normalizeProxyPrefix(raw) {
+  const value = String(raw ?? '').trim()
+  if (!value) return ''
+  if (value.includes('?target=')) return value
+  return value.includes('?') ? `${value}&target=` : `${value}?target=`
 }
 
 /** 读取热点榜缓存 TTL：env 缺失回退 300，非法值收敛到 [10, 3600] */
