@@ -1,5 +1,7 @@
 packages:
   - 'apps/*'
+  # Vercel 纯函数项目，独立依赖与模块格式（type=commonjs），不进工作区
+  - '!apps/proxy-vercel'
 
 # 允许这些依赖执行 postinstall 构建脚本（pnpm 12 默认拦截）
 # 说明：onlyBuiltDependencies 已被弃用，统一用 allowBuilds
