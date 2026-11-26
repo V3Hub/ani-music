@@ -7,7 +7,6 @@
 //   2. 打乱后小批量并发请求同一个目标，谁先成功用谁，其余立刻放弃
 //   3. 把胜出的代理按目标 host 缓存 30 分钟，后续同类请求优先复用它
 
-const { env: procEnv } = require('node:process')
 const { ProxyAgent, fetch: undiciFetch } = require('undici')
 
 /** 原始代理列表缓存时长：proxifly 每 5 分钟更新一次，这里同步 5 分钟 */
@@ -17,19 +16,8 @@ const WINNER_TTL_MS = 30 * 60 * 1000
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
 
-// 按函数所在区域决定优先取哪些国家的代理：
-// buguyy 封的是机房 ASN（Cloudflare / AWS 等），不是国家，
-// 所以美/日的住宅代理同样能过，而且从云端连过去延迟远低于国内住宅 IP
-const REGION_COUNTRIES = {
-  hkg1: ['HK', 'CN', 'TW', 'SG'],
-  sin1: ['SG', 'HK', 'MY', 'CN'],
-  iad1: ['US', 'CA', 'CN'],
-  sfo1: ['US', 'CA', 'CN'],
-  cle1: ['US', 'CN'],
-  fra1: ['DE', 'GB', 'US', 'CN'],
-  cdg1: ['FR', 'DE', 'GB', 'US', 'CN'],
-}
-const DEFAULT_COUNTRIES = ['US', 'CN']
+// 仅保留 CN 代理：实测多国混池会引入大量非中国出口，命中率反而下降
+const PROXY_COUNTRIES = ['CN']
 
 /** 每个国家最多取多少候选，避免列表过大 */
 const PER_COUNTRY_CAP = 120
@@ -207,8 +195,7 @@ async function fetchCountry(code) {
 
 /** 按区域优先级合并多国代理：https 排最前，其余按国家优先级 */
 async function buildList() {
-  const region = String(procEnv.VERCEL_REGION || '').toLowerCase()
-  const countries = REGION_COUNTRIES[region] || DEFAULT_COUNTRIES
+  const countries = PROXY_COUNTRIES
 
   const groups = await Promise.all(countries.map(code =>
     fetchCountry(code)
@@ -234,7 +221,7 @@ async function buildList() {
   // 全部前置会浪费掉整批样本；其余 https 轮转到队尾，仍有机会被抽到
   const https = merged.filter(p => p.startsWith('https://'))
   const others = merged.filter(p => !p.startsWith('https://'))
-  console.info(`[proxy-pool] 区域=${region || '-'} 国家=${countries.join('/')} 合计=${merged.length} https=${https.length}`)
+  console.info(`[proxy-pool] 国家=${countries.join('/')} 合计=${merged.length} https=${https.length}`)
   return https.slice(0, 6).concat(others, https.slice(6))
 }
 
