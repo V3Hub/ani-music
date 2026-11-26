@@ -40,38 +40,30 @@ WHERE COALESCE(audio_url, '') NOT LIKE '%source=netease%'
   AND COALESCE(audio_url, '') NOT LIKE '%source=bugu%';
 
 -- ---------- 3. 先清关联数据，避免留下孤儿记录 ----------
--- 评论点赞（依赖 song_comment）
 DELETE FROM song_comment_like
 WHERE comment_id IN (
   SELECT id FROM song_comment WHERE song_id IN (SELECT id FROM _cleanup_song_ids)
 );
 
--- 评论（含回复，回复同样带 song_id）
 DELETE FROM song_comment
 WHERE song_id IN (SELECT id FROM _cleanup_song_ids);
 
--- 评论通知（target_id = 歌曲 id）
 DELETE FROM user_notification
 WHERE type = 'comment_reply'
   AND target_id IN (SELECT id FROM _cleanup_song_ids);
 
--- 歌曲标签
 DELETE FROM song_tag
 WHERE song_id IN (SELECT id FROM _cleanup_song_ids);
 
--- 收藏
 DELETE FROM user_favorite
 WHERE song_id IN (SELECT id FROM _cleanup_song_ids);
 
--- 播放记录
 DELETE FROM user_play_record
 WHERE song_id IN (SELECT id FROM _cleanup_song_ids);
 
--- 歌单内歌曲
 DELETE FROM playlist_song
 WHERE song_id IN (SELECT id FROM _cleanup_song_ids);
 
--- 分享记录
 DELETE FROM share_user
 WHERE target_type = 'song'
   AND CAST(target_id AS INTEGER) IN (SELECT id FROM _cleanup_song_ids);
@@ -80,7 +72,7 @@ WHERE target_type = 'song'
 DELETE FROM songs
 WHERE id IN (SELECT id FROM _cleanup_song_ids);
 
--- ---------- 5. 收尾：删除临时表并复核 ----------
+-- ---------- 5. 收尾 ----------
 DROP TABLE _cleanup_song_ids;
 
 SELECT COUNT(*) AS remaining_songs FROM songs;

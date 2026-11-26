@@ -64,11 +64,27 @@ export async function handleSearchMusic(request, _env) {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         'Referer': new URL(api).origin,
       },
-      cf: { cacheTtl: 300, cacheEverything: true },
+      // 跨第三方域名不启用 CF 缓存：cacheEverything 会把 gzip 等响应流
+      // 按自己的方式处理，偶发 response.json() 无法解析
     })
-    const data = await fetchRes.json().catch(() => {
-      throw new Error('上游返回非标准JSON数据')
-    })
+    let data
+    try {
+      data = await fetchRes.json()
+    } catch {
+      // 兜底：转成 text 再手动 parse，并把前 200 字打到日志
+      const text = await fetchRes.text().catch(() => '')
+      console.warn('[search] json() 失败，回退手动 parse', {
+        source,
+        keyword,
+        content_type: fetchRes.headers.get('content-type'),
+        body_head: text.slice(0, 200),
+      })
+      try {
+        data = JSON.parse(text)
+      } catch {
+        throw new Error(`上游返回非标准JSON数据：${text.slice(0, 120)}`)
+      }
+    }
     return jsonResp({ code: 200, data: normalizeSearchResults(source, data) })
   } catch (err) {
     console.error('接口异常', { source, keyword, api, err: err.message })

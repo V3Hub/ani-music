@@ -20,3 +20,6 @@ database_id = "b8968ed6-0a25-4b99-b0bc-b033fa13e401"
 binding = "HOT_KV"
 id = "82e3cd16981c4858aee7dadb3b52af34"
 
+[observability.logs]
+enabled = true
+invocation_logs = true
