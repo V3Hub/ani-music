@@ -60,6 +60,8 @@ export async function handleSearchMusic(request, _env) {
   try {
     const fetchRes = await fetch(api, {
       method: 'GET',
+      // 经 Vercel 反代的中国源最多要等 18s 竞速，这里给足 25s 预算
+      signal: AbortSignal.timeout(25000),
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         'Referer': new URL(api).origin,
@@ -108,7 +110,8 @@ export async function handleSongStreamRedirect(request, _env) {
   let data
   try {
     const fetchRes = await fetch(apiUrl, {
-      signal: AbortSignal.timeout(10000),
+      // bugu 走 Vercel 反代竞速，最多 18s；给足 25s 避免提前 abort
+      signal: AbortSignal.timeout(25000),
       method: 'GET',
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',

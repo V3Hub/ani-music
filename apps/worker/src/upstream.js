@@ -9,7 +9,7 @@ import { APP_CONFIG } from './config.js'
  * 这里用 encodeURIComponent(directUrl) 只编码一次，
  * 避免 searchParams.set 二次编码 %（会把已有 %3D 变成 %253D）。
  * @param {string} directUrl 上游原始地址（query 值未编码）
- * @returns {string}
+ * @returns {string} 包好 key 与 target 参数的反代地址
  */
 function viaProxy(directUrl) {
   const base = APP_CONFIG.proxyUrl

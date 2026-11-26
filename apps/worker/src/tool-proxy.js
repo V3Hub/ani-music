@@ -28,7 +28,8 @@ export async function handleToolProxy(request) {
   upstream.searchParams.set('target', target)
 
   try {
-    const res = await fetch(upstream.toString(), { signal: AbortSignal.timeout(15000) })
+    // Vercel 侧中国目标竞速预算 18s，这里给 25s
+    const res = await fetch(upstream.toString(), { signal: AbortSignal.timeout(25000) })
     return new Response(await res.text(), {
       status: res.status,
       headers: {
