@@ -24,6 +24,16 @@ export function normalizeSearchResults(source, data) {
             singer: item.artist || '',
           }))
         : []
+    case 'bugu':
+      return Array.isArray(data?.data)
+        ? data.data.map(item => ({
+            id: item.id || '',
+            source,
+            title: item.title || '',
+            pic: item.picurl || '',
+            singer: item.singer || '',
+          }))
+        : []
     default:
       return []
   }
@@ -55,7 +65,23 @@ export async function handleSearchMusic(request, _env) {
         'Referer': new URL(api).origin,
       },
     })
-    const data = await fetchRes.json()
+    let data
+    try {
+      data = await fetchRes.json()
+    } catch {
+      // 兜底：反代回来偶发非标准 JSON
+      const text = await fetchRes.text().catch(() => '')
+      console.warn('[search] json() 失败，回退手动 parse', {
+        source,
+        keyword,
+        body_head: text.slice(0, 200),
+      })
+      try {
+        data = JSON.parse(text)
+      } catch {
+        throw new Error(`上游返回非标准JSON: ${text.slice(0, 120)}`)
+      }
+    }
     return jsonResp({ code: 200, data: normalizeSearchResults(source, data) })
   } catch (err) {
     console.error('搜索接口异常', { source, keyword, api, err: err.message })
@@ -89,7 +115,12 @@ export async function handleSongStreamRedirect(request, _env) {
         'Referer': new URL(apiUrl).origin,
       },
     })
-    data = await fetchRes.json()
+    const raw = await fetchRes.text().catch(() => '')
+    try {
+      data = JSON.parse(raw)
+    } catch {
+      data = null
+    }
     switch (source) {
       case 'netease': {
         const originUrl = data?.[0]?.url
@@ -106,6 +137,9 @@ export async function handleSongStreamRedirect(request, _env) {
       }
       case 'mitu':
         finalUrl = data?.data?.url
+        break
+      case 'bugu':
+        finalUrl = data?.url
         break
     }
   } catch (err) {

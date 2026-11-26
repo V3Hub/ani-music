@@ -1,3 +1,22 @@
+import { APP_CONFIG } from './config.js'
+
+/**
+ * bugu 上游按 Cloudflare / Vercel 出口 IP 段封禁，
+ * 通过 Vercel 反代出网（反代内部用 proxifly CN 代理 + 中国 IP）。
+ * 未配置 proxyUrl 时回退直连（会被封，仅调试用）。
+ * @param {string} directUrl 上游原始地址
+ * @returns {string}
+ */
+function viaProxy(directUrl) {
+  const base = APP_CONFIG.proxyUrl
+  if (!base) return directUrl
+  const key = APP_CONFIG.secretKey
+  const url = new URL(base)
+  url.searchParams.set('key', key)
+  url.searchParams.set('target', directUrl)
+  return url.toString()
+}
+
 export function buildSongApiUrl(source, id) {
   const rid = encodeURIComponent(id)
   switch (source) {
@@ -5,6 +24,8 @@ export function buildSongApiUrl(source, id) {
       return `https://api.qijieya.cn/meting/?type=song&id=${rid}`
     case 'mitu':
       return `https://www.qqmp3.vip/api/kw.php?rid=${rid}&type=json&level=exhigh&lrc=true`
+    case 'bugu':
+      return viaProxy(`https://www.buguyy.top/api/geturl?id=${rid}`)
     default:
       return ''
   }
@@ -21,6 +42,8 @@ export function buildSearchApiUrl(source, keyword, page, num) {
       return `https://api.vkeys.cn/v2/music/netease?word=${word}&page=${page}&num=${num}`
     case 'mitu':
       return `https://www.qqmp3.vip/api/songs.php?type=search&keyword=${word}`
+    case 'bugu':
+      return viaProxy(`https://www.buguyy.top/api/search?keyword=${word}`)
     default:
       return ''
   }

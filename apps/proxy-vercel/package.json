@@ -3,5 +3,8 @@
   "version": "0.0.0",
   "private": true,
   "type": "commonjs",
-  "description": "Vercel Serverless Function，通用 HTTP 反代"
+  "description": "Vercel Serverless Function，通用 HTTP 反代",
+  "dependencies": {
+    "undici": "^8.13.1"
+  }
 }

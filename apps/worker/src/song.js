@@ -59,6 +59,10 @@ export async function handleUpsertSong(request, env) {
           case 'mitu':
             fetchLrc = upstream?.data?.lrc
             break
+          case 'bugu':
+            // 上游歌词以 <br /> 分段，转成标准换行再入库
+            fetchLrc = String(upstream?.lrc || '').replace(/<br\s*\/?>/gi, '\n')
+            break
         }
       }
     } catch (fetchErr) {
