@@ -17,9 +17,9 @@ const { raceProxies, getCacheStats } = require('../lib/proxy-pool')
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
 
 const DIRECT_TIMEOUT_MS = 15000
-const PROXY_DEADLINE_MS = 18000
-const PROXY_ATTEMPT_MS = 7000
-const PROXY_BATCH_SIZE = 6
+const PROXY_DEADLINE_MS = 20000
+const PROXY_ATTEMPT_MS = 10000
+const PROXY_BATCH_SIZE = 30
 
 module.exports = async function handler(req, res) {
   const url = new URL(req.url, `https://${req.headers.host || 'localhost'}`)

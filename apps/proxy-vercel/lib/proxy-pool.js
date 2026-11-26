@@ -22,11 +22,11 @@ const PROXY_SOURCES = [
   'https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/countries/CN/data.json',
 ]
 
-/** 竞速默认参数：整体预算 18s，单代理 7s，每批 6 并发 */
+/** 竞速默认参数：整体预算 20s（含拉列表），单代理 10s，每批 30 并发 */
 const DEFAULTS = {
-  deadlineMs: 18000,
-  attemptMs: 7000,
-  batchSize: 6,
+  deadlineMs: 20000,
+  attemptMs: 10000,
+  batchSize: 30,
 }
 
 const state = {
@@ -182,11 +182,15 @@ async function raceProxies(target, options = {}) {
     'Accept-Language': 'zh-CN,zh;q=0.9',
   }
 
+  // 整体预算从进入函数就开始计时，列表拉取也算在内
+  const deadline = Date.now() + deadlineMs
+  const remainMs = () => deadline - Date.now()
+
   // 1. 命中缓存的胜出代理 → 单次尝试，省掉竞速开销
   const winner = state.winners.get(host)
   if (winner && Date.now() - winner.ts < WINNER_TTL_MS) {
     try {
-      const res = await attempt(winner.proxy, target, reqHeaders, attemptMs)
+      const res = await attempt(winner.proxy, target, reqHeaders, Math.min(attemptMs, Math.max(1000, remainMs())))
       state.attempts += 1
       if (isAcceptable(res.status))
         return res
@@ -196,20 +200,20 @@ async function raceProxies(target, options = {}) {
     state.winners.delete(host)
   }
 
-  // 2. 竞速
+  // 2. 竞速：http 代理优先（CONNECT 隧道更简单、成功率更高），再补 https
   const raw = await getRawList()
   if (raw.length === 0)
     throw new Error('代理列表为空')
+  const queue = shuffle(raw.filter(p => p.startsWith('http://')))
+    .concat(shuffle(raw.filter(p => !p.startsWith('http://'))))
 
-  const deadline = Date.now() + deadlineMs
-  const queue = shuffle(raw)
   const errors = []
   let tried = 0
   let cursor = 0
 
   while (cursor < queue.length) {
-    const remain = deadline - Date.now()
-    if (remain <= 0)
+    const remain = remainMs()
+    if (remain <= 1000)
       break
     const batch = queue.slice(cursor, cursor + batchSize)
     cursor += batch.length
@@ -224,7 +228,10 @@ async function raceProxies(target, options = {}) {
             return { ok: true, res }
           return { ok: false, err: `${proxyUrl} HTTP ${res.status}` }
         })
-        .catch(err => ({ ok: false, err: `${proxyUrl} ${err.message}` }))
+        .catch(err => ({
+          ok: false,
+          err: `${proxyUrl} ${err.name === 'AbortError' ? 'timeout' : err.message}`,
+        }))
     }))
 
     if (result.ok) {
