@@ -7,8 +7,8 @@ const { Buffer } = require('node:buffer')
 // 代理池缓存 2 小时刷新一次
 const CACHE_TTL_MS = 2 * 60 * 60 * 1000
 
-// 探测 URL：中国站点，返回 200 + 非空 body 即算代理可用
-const PROBE_URL = 'https://www.buguyy.top/api/search?keyword=a'
+// 探测 URL：百度首页（最稳定的中国站点，200 + body 非空即算代理可用）
+const PROBE_URL = 'https://www.baidu.com/'
 const PROBE_TIMEOUT_MS = 4000 // 单个代理探测超时
 const PROBE_CONCURRENCY = 8 // 并发探测数
 const MIN_WORKING = 5 // 最少保留数量，低于此值直接用原始列表兜底
