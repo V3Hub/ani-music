@@ -76,7 +76,7 @@
             </div>
             <div class="row-actions">
               <van-loading
-                v-if="state.addingId === song.id || state.resolvingId === song.id"
+                v-if="state.addingId === song.id"
                 size="18"
                 color="var(--theme-text)"
               />
@@ -126,7 +126,7 @@ import WaveBox from '@/components/waveBox/WaveBox.vue'
 import { ref, watch } from 'vue'
 
 const emit = defineEmits<{
-  /** 加入歌单：已拿到真实歌曲信息，由上层打开歌单选择弹层 */
+  /** 加入歌单：可能是尚未入库的搜索结果，上层确认歌单时再确保注册 */
   (e: 'addToPlaylist', song: Song): void
 }>()
 
@@ -141,7 +141,7 @@ const keyword = defineModel<string>('keyword', { required: true })
 const visible = defineModel<boolean>('visible', { required: true })
 
 const player = usePlayerStore()
-const { state, submitSearch, addSongToQueue, resolveSongForPlaylist, isSongPlaying, closeSearch } = useSongSearch(keyword, visible)
+const { state, submitSearch, addSongToQueue, warmUpSong, isSongPlaying, closeSearch } = useSongSearch(keyword, visible)
 
 /** 行操作菜单：当前展开的歌曲与定位 */
 const menuVisible = ref(false)
@@ -177,15 +177,14 @@ function onMenuPlay() {
     addSongToQueue(song)
 }
 
-/** 菜单「加入歌单」：先获取真实歌曲信息，成功后再交给上层打开歌单选择 */
-async function onMenuAddToPlaylist() {
+/** 菜单「加入歌单」：立即打开歌单选择弹层，真实歌曲在后台注册入库 */
+function onMenuAddToPlaylist() {
   const song = menuSong.value
   closeMenu()
   if (!song)
     return
-  const realSong = await resolveSongForPlaylist(song)
-  if (realSong)
-    emit('addToPlaylist', realSong)
+  warmUpSong(song)
+  emit('addToPlaylist', song)
 }
 
 /** 搜索弹窗关闭时收起菜单，避免菜单残留在页面上 */

@@ -14,6 +14,48 @@ import { reactive, ref, watch } from 'vue'
 const searchList = ref<Song[]>([])
 /** 搜索项 id → 后端注册后的真实歌曲，避免重复调用 /api/song/add */
 const resolvedSongs = new Map<string | number, Song>()
+/** 搜索项 id → 正在进行的注册请求，避免并发重复注册 */
+const pendingResolves = new Map<string | number, Promise<Song | null>>()
+
+/** 是否为尚未入库的搜索结果：搜索结果带 source，入库歌曲没有该字段 */
+export function isPendingSearchSong(song: Song): boolean {
+  return Boolean(song.source)
+}
+
+/**
+ * 注册搜索歌曲：命中缓存直接返回，否则共享同一个在途请求
+ * 供外部（如歌单选择）在需要真实歌曲 id 时调用
+ */
+export function resolveSearchSong(song: Song): Promise<Song | null> {
+  const cached = resolvedSongs.get(song.id)
+  if (cached)
+    return Promise.resolve(cached)
+
+  const pending = pendingResolves.get(song.id)
+  if (pending)
+    return pending
+
+  const task = (async () => {
+    try {
+      const realSong = await addSearchSong(song)
+      if (!realSong?.id) {
+        showToast('歌曲信息获取失败，请重试')
+        return null
+      }
+      resolvedSongs.set(song.id, realSong)
+      return realSong
+    } catch (err) {
+      console.warn('[search] 添加歌曲失败', err)
+      showToast('歌曲信息获取失败，请重试')
+      return null
+    } finally {
+      pendingResolves.delete(song.id)
+    }
+  })()
+
+  pendingResolves.set(song.id, task)
+  return task
+}
 
 export function useSongSearch(keyword: Ref<string>, visible: Ref<boolean>) {
   const player = usePlayerStore()
@@ -23,8 +65,6 @@ export function useSongSearch(keyword: Ref<string>, visible: Ref<boolean>) {
     loading: false,
     searched: false,
     addingId: null as string | number | null,
-    /** 正在获取真实歌曲信息（用于加入歌单）的搜索项 id */
-    resolvingId: null as string | number | null,
   })
 
   /** 提交搜索（仅键盘确认 / 点击搜索时触发） */
@@ -51,33 +91,12 @@ export function useSongSearch(keyword: Ref<string>, visible: Ref<boolean>) {
     }
   })
 
-  /** 获取搜索项对应的真实歌曲（带缓存）：搜索结果是外部数据，加入歌单前必须先注册拿到真实 id */
-  async function resolveRealSong(song: Song): Promise<Song | null> {
-    const cached = resolvedSongs.get(song.id)
-    if (cached)
-      return cached
-
-    try {
-      const realSong = await addSearchSong(song)
-      if (!realSong?.id) {
-        showToast('歌曲信息获取失败，请重试')
-        return null
-      }
-      resolvedSongs.set(song.id, realSong)
-      return realSong
-    } catch (err) {
-      console.warn('[search] 添加歌曲失败', err)
-      showToast('歌曲信息获取失败，请重试')
-      return null
-    }
-  }
-
   /** 点击搜索结果：先通过 /api/song/add 拿到真实歌曲，再加入「搜索列表」播放 */
   async function addSongToQueue(song: Song) {
     if (state.addingId != null) return
 
     state.addingId = song.id
-    const realSong = await resolveRealSong(song)
+    const realSong = await resolveSearchSong(song)
     state.addingId = null
     if (!realSong) return
 
@@ -93,17 +112,13 @@ export function useSongSearch(keyword: Ref<string>, visible: Ref<boolean>) {
     visible.value = false
   }
 
-  /** 搜索结果加入歌单：先拿到真实歌曲信息，成功后由调用方打开歌单选择弹层 */
-  async function resolveSongForPlaylist(song: Song): Promise<Song | null> {
-    if (state.resolvingId != null)
-      return null
-
-    state.resolvingId = song.id
-    try {
-      return await resolveRealSong(song)
-    } finally {
-      state.resolvingId = null
-    }
+  /**
+   * 加入歌单：界面立即响应，真实歌曲在后台注册
+   * 注册结果命中缓存，下次需要真实 id 时直接复用
+   */
+  function warmUpSong(song: Song) {
+    if (!isPendingSearchSong(song)) return
+    void resolveSearchSong(song)
   }
 
   /** 搜索结果行是否正在播放（搜索项 id 与真实歌曲 id 可能不同） */
@@ -116,5 +131,5 @@ export function useSongSearch(keyword: Ref<string>, visible: Ref<boolean>) {
     visible.value = false
   }
 
-  return { state, submitSearch, addSongToQueue, resolveSongForPlaylist, isSongPlaying, closeSearch }
+  return { state, submitSearch, addSongToQueue, warmUpSong, isSongPlaying, closeSearch }
 }

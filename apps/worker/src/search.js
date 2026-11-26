@@ -14,15 +14,6 @@ export function normalizeSearchResults(source, data) {
             album: item.album || '',
           }))
         : []
-    case 'qq':
-      return Array.isArray(data)
-        ? data.map(item => ({
-            id: item.song_mid || '',
-            source,
-            title: item.song_title || '',
-            singer: item.singer_name || '',
-          }))
-        : []
     case 'mitu':
       return Array.isArray(data?.data)
         ? data.data.map(item => ({
@@ -31,6 +22,16 @@ export function normalizeSearchResults(source, data) {
             title: item.name || '',
             pic: item.pic || '',
             singer: item.artist || '',
+          }))
+        : []
+    case 'bugu':
+      return Array.isArray(data?.data)
+        ? data.data.map(item => ({
+            id: item.id || '',
+            source,
+            title: item.title || '',
+            pic: item.picurl || '',
+            singer: item.singer || '',
           }))
         : []
     default:
@@ -116,11 +117,11 @@ export async function handleSongStreamRedirect(request, _env) {
         finalUrl = resp.url
         break
       }
-      case 'qq':
-        finalUrl = data?.song_play_url
-        break
       case 'mitu':
         finalUrl = data?.data?.url
+        break
+      case 'bugu':
+        finalUrl = data?.url
         break
     }
   } catch (err) {

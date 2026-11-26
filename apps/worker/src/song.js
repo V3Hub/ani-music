@@ -25,11 +25,11 @@ export async function handleUpsertSong(request, env) {
   const apiUrl = buildSongApiUrl(source, id)
   const fetchUrl = `https://musapi.v3hub.site/api/song/stream?source=${source}&id=${encodeURIComponent(id)}`
   let fetchLrc = lrc
-  let fetchPic = pic
-  let duration = 0
-  let fetchAlbum = album
-  let genre = ''
-  let releaseTime = null
+  const fetchPic = pic
+  const duration = 0
+  const fetchAlbum = album
+  const genre = ''
+  const releaseTime = null
   if (apiUrl) {
     try {
       const upstream = await fetch(apiUrl, {
@@ -56,16 +56,12 @@ export async function handleUpsertSong(request, env) {
             fetchLrc = await lrcRes.text().catch(() => null)
             break
           }
-          case 'qq':
-            fetchPic = upstream?.album_pic
-            fetchLrc = upstream?.song_lyric
-            duration = Number(upstream?.song_play_time || 0)
-            fetchAlbum = upstream?.album_name || ''
-            genre = upstream?.genre || ''
-            releaseTime = upstream?.public_time || null
-            break
           case 'mitu':
             fetchLrc = upstream?.data?.lrc
+            break
+          case 'bugu':
+            // 上游歌词以 <br /> 分段，转成标准换行再入库
+            fetchLrc = String(upstream?.lrc || '').replace(/<br\s*\/?>/gi, '\n')
             break
         }
       }

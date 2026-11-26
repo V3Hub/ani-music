@@ -195,6 +195,7 @@ import { toUserToken } from '@/utils/user-token'
 import { usePlaylistLibrary } from '@/composables/player/usePlaylistLibrary'
 import { usePlayQueue } from '@/composables/player/usePlayQueue'
 import { PLAYER_TABS, usePlayerNavigation } from '@/composables/player/usePlayerNavigation'
+import { isPendingSearchSong, resolveSearchSong } from '@/composables/player/useSongSearch'
 import { usePlaybackSource } from '@/composables/player/usePlaybackSource'
 import { useListenTimeStat } from '@/composables/useListenTimeStat'
 import { usePlayerStore } from '@/stores/player'
@@ -742,23 +743,37 @@ function openAddToPlaylistFromQueue() {
   addToPlaylistVisible.value = true
 }
 
-/** 选择目标歌单 */
-async function onSelectPlaylistTarget(target: number | 'favorite') {
+/** 选择目标歌单：立即收起弹层，注册与加歌单全部后台完成 */
+function onSelectPlaylistTarget(target: number | 'favorite') {
   const song = actionSong.value
   if (!song)
     return
 
-  if (target === 'favorite') {
-    if (isFavoriteSong(song))
-      showToast('已在喜欢的歌单中')
-    else
-      applyFavorite(song, true)
-  } else {
-    await addSongToPlaylist(song.id, target)
-  }
-
+  // 先响应界面：不等接口返回
   addToPlaylistVisible.value = false
   songActionVisible.value = false
+
+  void (async () => {
+    // 搜索结果尚未入库：注册请求在打开弹层时已后台发出，这里通常直接命中缓存
+    let targetSong = song
+    if (isPendingSearchSong(song)) {
+      const realSong = await resolveSearchSong(song)
+      if (!realSong)
+        return
+      targetSong = realSong
+    }
+
+    if (target === 'favorite') {
+      if (isFavoriteSong(targetSong)) {
+        showToast('已在喜欢的歌单中')
+        return
+      }
+      applyFavorite(targetSong, true)
+      return
+    }
+
+    await addSongToPlaylist(targetSong.id, target)
+  })()
 }
 
 /** 添加到歌单面板里点「创建歌单」 */

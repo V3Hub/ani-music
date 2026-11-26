@@ -3,10 +3,10 @@ export function buildSongApiUrl(source, id) {
   switch (source) {
     case 'netease':
       return `https://api.qijieya.cn/meting/?type=song&id=${rid}`
-    case 'qq':
-      return `https://tang.api.s01s.cn/music_open_api.php?mid=${rid}`
     case 'mitu':
       return `https://www.qqmp3.vip/api/kw.php?rid=${rid}&type=json&level=exhigh&lrc=true`
+    case 'bugu':
+      return `https://www.buguyy.top/api/geturl?id=${rid}`
     default:
       return ''
   }
@@ -21,10 +21,10 @@ export function buildSearchApiUrl(source, keyword, page, num) {
   switch (source) {
     case 'netease':
       return `https://api.vkeys.cn/v2/music/netease?word=${word}&page=${page}&num=${num}`
-    case 'qq':
-      return `https://tang.api.s01s.cn/music_open_api.php?msg=${word}&type=json`
     case 'mitu':
       return `https://www.qqmp3.vip/api/songs.php?type=search&keyword=${word}`
+    case 'bugu':
+      return `https://www.buguyy.top/api/search?keyword=${word}`
     default:
       return ''
   }
