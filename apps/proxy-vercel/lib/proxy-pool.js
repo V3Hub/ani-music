@@ -7,6 +7,7 @@
 //   2. 打乱后小批量并发请求同一个目标，谁先成功用谁，其余立刻放弃
 //   3. 把胜出的代理按目标 host 缓存 30 分钟，后续同类请求优先复用它
 
+const { env: procEnv } = require('node:process')
 const { ProxyAgent, fetch: undiciFetch } = require('undici')
 
 /** 原始代理列表缓存时长：proxifly 每 5 分钟更新一次，这里同步 5 分钟 */
@@ -159,8 +160,9 @@ function firstSuccess(promises) {
   })
 }
 
-// 嗅探目标：百度首页最稳定，能打通说明该代理真的能出网
-const PROBE_URL = 'https://www.baidu.com/'
+// 嗅探目标：默认百度首页（可用 env.PROBE_URL 覆盖）
+// 注意百度对代理 IP 有拦截，可能产生假阴性
+const PROBE_URL = procEnv.PROBE_URL || 'https://www.baidu.com/'
 const PROBE_TIMEOUT_MS = 2500
 const PROBE_CONCURRENCY = 50
 /** 嗅探阶段最多占用多少毫秒，剩下的预算留给竞速 */
@@ -274,8 +276,12 @@ async function buildList(deadline) {
   console.info(`[proxy-pool] 国家=${countries.join('/')} 候选=${merged.length} 嗅探通过=${verified.length}`)
 
   if (verified.length === 0) {
-    console.warn('[proxy-pool] 百度嗅探无一通过，沿用旧池')
-    return state.raw
+    // 百度会拦截代理 IP，嗅探全挂很可能是假阴性，
+    // 此时用未嗅探的候选继续竞速，而不是把池子清空导致直接报「列表为空」
+    console.warn('[proxy-pool] 百度嗅探无一通过，回退未嗅探候选')
+    const fallbackHttps = merged.filter(p => p.startsWith('https://'))
+    const fallbackOthers = merged.filter(p => !p.startsWith('https://'))
+    return fallbackHttps.slice(0, 6).concat(fallbackOthers, fallbackHttps.slice(6))
   }
 
   // https 代理只占队首前 6 个：实测 https 条目大量不可用，全部前置会浪费整批样本
