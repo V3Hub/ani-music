@@ -7,6 +7,7 @@
 //   2. 打乱后小批量并发请求同一个目标，谁先成功用谁，其余立刻放弃
 //   3. 把胜出的代理按目标 host 缓存 30 分钟，后续同类请求优先复用它
 
+const { env: procEnv } = require('node:process')
 const { ProxyAgent, fetch: undiciFetch } = require('undici')
 
 /** 原始代理列表缓存时长：proxifly 每 5 分钟更新一次，这里同步 5 分钟 */
@@ -16,12 +17,30 @@ const WINNER_TTL_MS = 30 * 60 * 1000
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
 
-// raw.githubusercontent 优先（CDN 缓存约 5 分钟，能跟上 proxifly 的更新频率）；
-// jsdelivr 的 @main 分支缓存可达 12 小时，仅作兜底
-const PROXY_SOURCES = [
-  'https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/countries/CN/data.json',
-  'https://cdn.jsdelivr.net/gh/proxifly/free-proxy-list@main/proxies/countries/CN/data.json',
-]
+// 按函数所在区域决定优先取哪些国家的代理：
+// buguyy 封的是机房 ASN（Cloudflare / AWS 等），不是国家，
+// 所以美/日的住宅代理同样能过，而且从云端连过去延迟远低于国内住宅 IP
+const REGION_COUNTRIES = {
+  hkg1: ['HK', 'CN', 'TW', 'SG'],
+  sin1: ['SG', 'HK', 'MY', 'CN'],
+  iad1: ['US', 'CA', 'CN'],
+  sfo1: ['US', 'CA', 'CN'],
+  cle1: ['US', 'CN'],
+  fra1: ['DE', 'GB', 'US', 'CN'],
+  cdg1: ['FR', 'DE', 'GB', 'US', 'CN'],
+}
+const DEFAULT_COUNTRIES = ['US', 'CN']
+
+/** 每个国家最多取多少候选，避免列表过大 */
+const PER_COUNTRY_CAP = 120
+
+// raw.githubusercontent 优先（CDN 缓存约 5 分钟），jsdelivr 的 @main 缓存可达 12h，仅兜底
+function listUrls(code) {
+  return [
+    `https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/countries/${code}/data.json`,
+    `https://cdn.jsdelivr.net/gh/proxifly/free-proxy-list@main/proxies/countries/${code}/data.json`,
+  ]
+}
 
 /** 竞速默认参数：整体预算 20s（含拉列表），单代理 10s，每批 30 并发 */
 const DEFAULTS = {
@@ -36,6 +55,7 @@ const state = {
   fetching: false,
   lastError: '',
   attempts: 0,
+  rotate: 0,
   winners: new Map(),
 }
 
@@ -104,10 +124,10 @@ function firstSuccess(promises) {
   })
 }
 
-/** 从 proxifly 拉取 CN 代理原始列表（多源容灾） */
-async function fetchRawList() {
-  let lastError = new Error('所有代理源均拉取失败')
-  for (const url of PROXY_SOURCES) {
+/** 拉取单个国家的代理列表（多源容灾） */
+async function fetchCountry(code) {
+  let lastError = new Error(`${code} 拉取失败`)
+  for (const url of listUrls(code)) {
     try {
       const resp = await undiciFetch(url, {
         headers: { 'User-Agent': UA },
@@ -122,7 +142,7 @@ async function fetchRawList() {
         lastError = new Error('响应不是数组')
         continue
       }
-      const list = data
+      return data
         .filter(p => p
           && (p.protocol === 'http' || p.protocol === 'https')
           && typeof p.ip === 'string'
@@ -130,12 +150,44 @@ async function fetchRawList() {
           && p.port > 0
           && p.port < 65536)
         .map(p => `${p.protocol}://${p.ip}:${p.port}`)
-      return [...new Set(list)]
     } catch (err) {
       lastError = err
     }
   }
   throw lastError
+}
+
+/** 按区域优先级合并多国代理：https 排最前，其余按国家优先级 */
+async function buildList() {
+  const region = String(procEnv.VERCEL_REGION || '').toLowerCase()
+  const countries = REGION_COUNTRIES[region] || DEFAULT_COUNTRIES
+
+  const groups = await Promise.all(countries.map(code =>
+    fetchCountry(code)
+      .then(list => shuffle([...new Set(list)]).slice(0, PER_COUNTRY_CAP))
+      .catch((err) => {
+        console.warn(`[proxy-pool] ${code} 拉取失败: ${err.message}`)
+        return []
+      }),
+  ))
+
+  const seen = new Set()
+  const merged = []
+  for (const group of groups) {
+    for (const proxy of group) {
+      if (!seen.has(proxy)) {
+        seen.add(proxy)
+        merged.push(proxy)
+      }
+    }
+  }
+
+  // https 代理只占队首前 6 个：列表里 https 条数少且实测大量不可用，
+  // 全部前置会浪费掉整批样本；其余 https 轮转到队尾，仍有机会被抽到
+  const https = merged.filter(p => p.startsWith('https://'))
+  const others = merged.filter(p => !p.startsWith('https://'))
+  console.info(`[proxy-pool] 区域=${region || '-'} 国家=${countries.join('/')} 合计=${merged.length} https=${https.length}`)
+  return https.slice(0, 6).concat(others, https.slice(6))
 }
 
 /** 取原始列表；超过 5 分钟则刷新，刷新失败保留旧值 */
@@ -149,7 +201,7 @@ async function getRawList(force = false) {
   state.fetching = true
   inflight = (async () => {
     try {
-      const raw = await fetchRawList()
+      const raw = await buildList()
       state.raw = raw
       state.rawFetchedAt = Date.now()
       state.lastError = ''
@@ -209,12 +261,14 @@ async function raceProxies(target, options = {}) {
     state.winners.delete(host)
   }
 
-  // 2. 竞速：优先 https 代理（原生支持 TLS 隧道），再补 http
+  // 2. 竞速：buildList 已按 https 优先 + 国家优先级排好；
+  //    每次请求把取样窗口向后轮转一批，避免 5 分钟内反复只试前 30 个
   const raw = await getRawList()
   if (raw.length === 0)
     throw new Error('代理列表为空')
-  const queue = shuffle(raw.filter(p => p.startsWith('https://')))
-    .concat(shuffle(raw.filter(p => !p.startsWith('https://'))))
+  const slot = Math.max(1, Math.ceil(raw.length / batchSize))
+  const offset = (state.rotate++ % slot) * batchSize
+  const queue = raw.slice(offset).concat(raw.slice(0, offset))
 
   const errors = []
   let tried = 0
