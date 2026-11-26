@@ -3,8 +3,8 @@
 
 const { ProxyAgent, fetch: undiciFetch } = require('undici')
 
-// proxifly 每 5 分钟更新一次，缓存 TTL 稍短
-const CACHE_TTL_MS = 4 * 60 * 1000
+// 代理池缓存 2 小时刷新一次
+const CACHE_TTL_MS = 2 * 60 * 60 * 1000
 
 // 探测 URL：中国站点，返回 200 + 非空 body 即算代理可用
 const PROBE_URL = 'https://www.buguyy.top/api/search?keyword=a'
