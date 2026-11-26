@@ -38,6 +38,7 @@ module.exports = async function handler(req, res) {
     return json(res, { code: 400, msg: '仅支持 http/https', target }, 400)
   }
 
+  const isDebug = url.searchParams.get('dbg') === '1'
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 10000)
 
@@ -53,6 +54,19 @@ module.exports = async function handler(req, res) {
       signal: controller.signal,
     })
 
+    // dbg=1：不回传上游原始响应，而是回传诊断信息（区分"上游返回 502"和"函数崩溃"）
+    if (isDebug) {
+      const text = await upstream.text()
+      return json(res, {
+        ok: true,
+        region: procEnv.VERCEL_REGION || '',
+        status: upstream.status,
+        ct: upstream.headers.get('content-type') || '',
+        len: text.length,
+        head: text.slice(0, 300),
+      })
+    }
+
     const body = new Uint8Array(await upstream.arrayBuffer())
 
     res.statusCode = upstream.status
@@ -61,7 +75,7 @@ module.exports = async function handler(req, res) {
     res.setHeader('Cache-Control', 'no-store')
     res.end(body)
   } catch (err) {
-    json(res, { code: 502, msg: '上游请求失败', detail: err.message }, 502)
+    json(res, { code: 502, msg: '上游请求失败', region: procEnv.VERCEL_REGION || '', detail: `${err.name}: ${err.message}` }, 502)
   } finally {
     clearTimeout(timer)
   }
