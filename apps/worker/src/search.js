@@ -67,23 +67,7 @@ export async function handleSearchMusic(request, _env) {
         'Referer': new URL(api).origin,
       },
     })
-    let data
-    try {
-      data = await fetchRes.json()
-    } catch {
-      // 兜底：反代回来偶发非标准 JSON
-      const text = await fetchRes.text().catch(() => '')
-      console.warn('[search] json() 失败，回退手动 parse', {
-        source,
-        keyword,
-        body_head: text.slice(0, 200),
-      })
-      try {
-        data = JSON.parse(text)
-      } catch {
-        throw new Error(`上游返回非标准JSON: ${text.slice(0, 120)}`)
-      }
-    }
+    const data = await fetchRes.json()
     return jsonResp({ code: 200, data: normalizeSearchResults(source, data) })
   } catch (err) {
     console.error('搜索接口异常', { source, keyword, api, err: err.message })
@@ -107,7 +91,6 @@ export async function handleSongStreamRedirect(request, _env) {
     return jsonResp({ code: 400, msg: '不支持的 source' })
   }
   let finalUrl = ''
-  let data
   try {
     const fetchRes = await fetch(apiUrl, {
       // bugu 走 Vercel 反代竞速，最多 18s；给足 25s 避免提前 abort
@@ -118,12 +101,7 @@ export async function handleSongStreamRedirect(request, _env) {
         'Referer': new URL(apiUrl).origin,
       },
     })
-    const raw = await fetchRes.text().catch(() => '')
-    try {
-      data = JSON.parse(raw)
-    } catch {
-      data = null
-    }
+    const data = await fetchRes.json()
     switch (source) {
       case 'netease': {
         const originUrl = data?.[0]?.url
