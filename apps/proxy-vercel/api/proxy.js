@@ -1,19 +1,12 @@
-// Vercel Serverless Function — 反代 buguyy / bugumusic 上游
+// Vercel Serverless Function — 通用 HTTP 反代
 //
-// 访问路径：/api/proxy?target=<encodeURIComponent(完整上游URL)>
+// 访问路径：/api/proxy?target=<encodeURIComponent(目标URL)>
 // 例：/api/proxy?target=https%3A%2F%2Fwww.buguyy.top%2Fapi%2Fsearch%3Fkeyword%3D%E7%88%B1%E4%BD%A0
 //
 // 作用：Cloudflare Worker 的出口 IP 段被上游封禁，这里借 Vercel 的出网 IP
 // （与 Cloudflare 不同 ASN）绕开黑名单。
 // 本目录带 package.json（type=commonjs），确保函数按 CJS 加载，
 // 不受仓库根 package.json 的 type=module 影响。
-
-// SSRF 防护：只允许反代这些上游
-const ALLOWED_ORIGINS = [
-  'https://www.buguyy.top/',
-  'https://bugumusic.com/',
-  'https://api.music.126.net/',
-]
 
 module.exports = async function handler(req, res) {
   const url = new URL(req.url, `https://${req.headers.host || 'localhost'}`)
@@ -23,20 +16,25 @@ module.exports = async function handler(req, res) {
     return json(res, { code: 400, msg: '缺少 target 参数' }, 400)
   }
 
-  if (!ALLOWED_ORIGINS.some(prefix => target.startsWith(prefix))) {
-    return json(res, { code: 403, msg: '目标域名不在白名单', target }, 403)
+  let parsed
+  try {
+    parsed = new URL(target)
+  } catch {
+    return json(res, { code: 400, msg: 'target 不是合法 URL', target }, 400)
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return json(res, { code: 400, msg: '仅支持 http/https', target }, 400)
   }
 
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 10000)
 
   try {
-    const targetUrl = new URL(target)
     const upstream = await fetch(target, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-        'Referer': `${targetUrl.origin}/`,
-        'Origin': targetUrl.origin,
+        'Referer': `${parsed.origin}/`,
+        'Origin': parsed.origin,
         'Accept': 'application/json, text/plain, */*',
         'X-Requested-With': 'XMLHttpRequest',
       },
