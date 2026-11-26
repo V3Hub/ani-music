@@ -18,8 +18,8 @@ const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 
 const DIRECT_TIMEOUT_MS = 15000
 const PROXY_DEADLINE_MS = 20000
-const PROXY_ATTEMPT_MS = 10000
-const PROXY_BATCH_SIZE = 30
+const PROXY_ATTEMPT_MS = 9000
+const PROXY_BATCH_SIZE = 100
 
 module.exports = async function handler(req, res) {
   const url = new URL(req.url, `https://${req.headers.host || 'localhost'}`)

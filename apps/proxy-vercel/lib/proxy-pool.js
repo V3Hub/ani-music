@@ -53,11 +53,11 @@ function listUrls(code) {
   ]
 }
 
-/** 竞速默认参数：整体预算 20s（含拉列表），单代理 10s，每批 30 并发 */
+/** 竞速默认参数：整体预算 20s（含拉列表与嗅探），单代理 9s，每批 100 并发 */
 const DEFAULTS = {
   deadlineMs: 20000,
-  attemptMs: 10000,
-  batchSize: 30,
+  attemptMs: 9000,
+  batchSize: 100,
 }
 
 const state = {
@@ -162,7 +162,7 @@ function firstSuccess(promises) {
 
 // 嗅探目标：默认百度首页（可用 env.PROBE_URL 覆盖）
 // 注意百度对代理 IP 有拦截，可能产生假阴性
-const PROBE_URL = procEnv.PROBE_URL || 'https://www.baidu.com/'
+const PROBE_URL = procEnv.PROBE_URL || 'https://www.qq.com/'
 const PROBE_TIMEOUT_MS = 2500
 const PROBE_CONCURRENCY = 50
 /** 嗅探阶段最多占用多少毫秒，剩下的预算留给竞速 */
@@ -188,7 +188,9 @@ async function fetchCountry(code) {
       }
       return data
         .filter(p => p
-          && (p.protocol === 'http' || p.protocol === 'https')
+          // 只要 http 代理：https 代理在 undici 下对 IP 主机做 TLS SNI 会抛
+          // ERR_INVALID_ARG_VALUE，实测全部不可用，留着只会污染统计
+          && p.protocol === 'http'
           && typeof p.ip === 'string'
           && typeof p.port === 'number'
           && p.port > 0
@@ -279,15 +281,11 @@ async function buildList(deadline) {
     // 百度会拦截代理 IP，嗅探全挂很可能是假阴性，
     // 此时用未嗅探的候选继续竞速，而不是把池子清空导致直接报「列表为空」
     console.warn('[proxy-pool] 百度嗅探无一通过，回退未嗅探候选')
-    const fallbackHttps = merged.filter(p => p.startsWith('https://'))
-    const fallbackOthers = merged.filter(p => !p.startsWith('https://'))
-    return fallbackHttps.slice(0, 6).concat(fallbackOthers, fallbackHttps.slice(6))
+    return merged
   }
 
   // https 代理只占队首前 6 个：实测 https 条目大量不可用，全部前置会浪费整批样本
-  const https = verified.filter(p => p.startsWith('https://'))
-  const others = verified.filter(p => !p.startsWith('https://'))
-  return https.slice(0, 6).concat(others, https.slice(6))
+  return verified
 }
 
 /** 取原始列表；超过 5 分钟则刷新，刷新失败保留旧值 */
