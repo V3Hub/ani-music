@@ -3,23 +3,24 @@
 // 设计要点：Vercel 是无状态 Serverless，实例随时冷启动 / 扩容，进程内缓存并不可靠。
 // 因此不在请求路径上做「全量探测」——175 个代理跑一遍会让冷启动接近一分钟，调用方必然超时。
 // 这里改成「按目标实时竞速」：
-//   1. 拉取 proxifly CN 代理原始列表（内存缓存 2 小时，拉取失败保留旧值）
+//   1. 拉取 proxifly CN 代理原始列表（内存缓存 5 分钟，与上游更新频率一致）
 //   2. 打乱后小批量并发请求同一个目标，谁先成功用谁，其余立刻放弃
 //   3. 把胜出的代理按目标 host 缓存 30 分钟，后续同类请求优先复用它
 
 const { ProxyAgent, fetch: undiciFetch } = require('undici')
 
-/** 原始代理列表缓存时长 */
-const LIST_TTL_MS = 2 * 60 * 60 * 1000
+/** 原始代理列表缓存时长：proxifly 每 5 分钟更新一次，这里同步 5 分钟 */
+const LIST_TTL_MS = 5 * 60 * 1000
 /** 单个目标 host 的胜出代理缓存时长 */
 const WINNER_TTL_MS = 30 * 60 * 1000
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
 
-// jsdelivr CDN 优先，raw.githubusercontent 兜底
+// raw.githubusercontent 优先（CDN 缓存约 5 分钟，能跟上 proxifly 的更新频率）；
+// jsdelivr 的 @main 分支缓存可达 12 小时，仅作兜底
 const PROXY_SOURCES = [
-  'https://cdn.jsdelivr.net/gh/proxifly/free-proxy-list@main/proxies/countries/CN/data.json',
   'https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/countries/CN/data.json',
+  'https://cdn.jsdelivr.net/gh/proxifly/free-proxy-list@main/proxies/countries/CN/data.json',
 ]
 
 /** 竞速默认参数：整体预算 20s（含拉列表），单代理 10s，每批 30 并发 */
@@ -37,6 +38,9 @@ const state = {
   attempts: 0,
   winners: new Map(),
 }
+
+/** 进行中的列表拉取（并发请求共享同一个 Promise） */
+let inflight = null
 
 /** Fisher-Yates 洗牌（返回新数组） */
 function shuffle(list) {
@@ -134,27 +138,32 @@ async function fetchRawList() {
   throw lastError
 }
 
-/** 取原始列表；过期则刷新，刷新失败保留旧值不阻塞请求 */
+/** 取原始列表；超过 5 分钟则刷新，刷新失败保留旧值 */
 async function getRawList(force = false) {
   const fresh = state.raw.length > 0 && Date.now() - state.rawFetchedAt < LIST_TTL_MS
   if (!force && fresh)
     return state.raw
-  if (state.fetching)
-    return state.raw
+  // 并发请求共享同一次拉取，避免冷启动时多个请求各拉一遍
+  if (inflight)
+    return inflight
   state.fetching = true
-  try {
-    const raw = await fetchRawList()
-    state.raw = raw
-    state.rawFetchedAt = Date.now()
-    state.lastError = ''
-    console.info(`[proxy-pool] 列表已更新 count=${raw.length}`)
-  } catch (err) {
-    state.lastError = err.message
-    console.error('[proxy-pool] 拉取代理列表失败:', err.message)
-  } finally {
-    state.fetching = false
-  }
-  return state.raw
+  inflight = (async () => {
+    try {
+      const raw = await fetchRawList()
+      state.raw = raw
+      state.rawFetchedAt = Date.now()
+      state.lastError = ''
+      console.info(`[proxy-pool] 列表已更新 count=${raw.length}`)
+    } catch (err) {
+      state.lastError = err.message
+      console.error('[proxy-pool] 拉取代理列表失败:', err.message)
+    } finally {
+      inflight = null
+      state.fetching = false
+    }
+    return state.raw
+  })()
+  return inflight
 }
 
 /**
@@ -200,12 +209,12 @@ async function raceProxies(target, options = {}) {
     state.winners.delete(host)
   }
 
-  // 2. 竞速：http 代理优先（CONNECT 隧道更简单、成功率更高），再补 https
+  // 2. 竞速：优先 https 代理（原生支持 TLS 隧道），再补 http
   const raw = await getRawList()
   if (raw.length === 0)
     throw new Error('代理列表为空')
-  const queue = shuffle(raw.filter(p => p.startsWith('http://')))
-    .concat(shuffle(raw.filter(p => !p.startsWith('http://'))))
+  const queue = shuffle(raw.filter(p => p.startsWith('https://')))
+    .concat(shuffle(raw.filter(p => !p.startsWith('https://'))))
 
   const errors = []
   let tried = 0
