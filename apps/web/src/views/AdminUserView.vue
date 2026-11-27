@@ -18,7 +18,7 @@
           <input
             v-model="keyword"
             class="search-input"
-            placeholder="用户名 / 昵称 / 手机 / 邮箱"
+            placeholder="用户名 / 昵称 / 手机 / 邮箱 / ID"
             @keyup.enter="loadList(1)"
           >
           <button
@@ -75,7 +75,7 @@
             >VIP {{ item.vip_level }}</span>
           </div>
           <div class="info-meta">
-            <span>ID {{ item.id }}</span>
+            <span>ID {{ item.id_code || item.id }}</span>
             <span>·</span>
             <span>{{ item.username }}</span>
           </div>
@@ -125,7 +125,7 @@
     >
       <div class="action-sheet">
         <p class="target-line">
-          {{ target?.nickname || (`@${target?.username}`) }}（ID {{ target?.id }}）
+          {{ target?.nickname || (`@${target?.username}`) }}（ID {{ target?.id_code || target?.id }}）
         </p>
         <template v-if="target">
           <button

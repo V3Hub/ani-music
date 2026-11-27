@@ -4,6 +4,28 @@ import { deleteUserCascade } from './db.js'
 import { jsonResp } from './http.js'
 import { sha256Hex } from './user.js'
 
+/** 用户 id → base64 展示串（与音源 id 的展示形式保持一致） */
+function encodeUserId(id) {
+  return btoa(String(id))
+}
+
+/**
+ * 把搜索词解析成用户 id：
+ * 支持 base64（如 MTEyNzA4MjE=）和纯数字两种写法，其余返回 0
+ */
+function decodeUserId(keyword) {
+  if (/^\d+$/.test(keyword))
+    return Number(keyword)
+  try {
+    const normalized = keyword.replace(/-/g, '+').replace(/_/g, '/')
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=')
+    const decoded = atob(padded)
+    return /^\d+$/.test(decoded) ? Number(decoded) : 0
+  } catch {
+    return 0
+  }
+}
+
 export async function handleAdminListUsers(request, env) {
   const adminId = await requireAdmin(request, env)
   if (!adminId)
@@ -23,9 +45,17 @@ export async function handleAdminListUsers(request, env) {
   const where = ['id != ?']
   const params = [adminId]
   if (keyword) {
-    where.push(`(username LIKE ? OR nickname LIKE ? OR phone LIKE ? OR email LIKE ?)`)
     const like = `%${keyword}%`
-    params.push(like, like, like, like)
+    const conditions = ['username LIKE ?', 'nickname LIKE ?', 'phone LIKE ?', 'email LIKE ?']
+    const args = [like, like, like, like]
+    // 搜索词能解析成 id（base64 或纯数字）时，额外按 id 精确匹配
+    const idMatch = decodeUserId(keyword)
+    if (idMatch > 0) {
+      conditions.push('id = ?')
+      args.push(idMatch)
+    }
+    where.push(`(${conditions.join(' OR ')})`)
+    params.push(...args)
   }
   if (statusParam === 'active' || statusParam === 'banned') {
     where.push(`COALESCE(status, 'active') = ?`)
@@ -59,6 +89,7 @@ export async function handleAdminListUsers(request, env) {
 
   const list = rows.map(row => ({
     id: row.id,
+    id_code: encodeUserId(row.id),
     username: row.username || '',
     nickname: row.nickname || '',
     avatar_url: row.avatar_url || '',

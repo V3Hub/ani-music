@@ -5,6 +5,8 @@ export type BanDays = 0 | 7 | 30 | 90 | 180 | 365
 
 export interface AdminUserItem {
   id: number
+  /** 用户 id 的 base64 展示串 */
+  id_code: string
   username: string
   nickname: string
   avatar_url: string
