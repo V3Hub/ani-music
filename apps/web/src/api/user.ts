@@ -94,6 +94,8 @@ export interface PublicUserProfile {
   avatar: string
   vipLevel: number
   isAdmin: boolean
+  /** 账号状态：active 正常 / banned 已封禁 */
+  status: 'active' | 'banned'
   /** 是否是当前登录用户自己 */
   mine: boolean
   commentCount: number

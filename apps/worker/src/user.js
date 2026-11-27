@@ -243,7 +243,9 @@ export async function handleGetPublicUserProfile(request, env) {
     return jsonResp({ code: 400, msg: '参数错误' })
 
   const row = await env.DB.prepare(
-    'SELECT id, nickname, avatar_url, vip_level, is_admin FROM users WHERE id = ?',
+    `SELECT id, nickname, avatar_url, vip_level, is_admin,
+            COALESCE(status, 'active') AS status
+     FROM users WHERE id = ?`,
   )
     .bind(targetId)
     .first()
@@ -266,6 +268,7 @@ export async function handleGetPublicUserProfile(request, env) {
       avatar: row.avatar_url || '',
       vipLevel: Number(row.vip_level) || 0,
       isAdmin: !!row.is_admin,
+      status: row.status || 'active',
       mine: row.id === currentUserId,
       commentCount: Number(commentRow?.count) || 0,
       wishCount: Number(wishRow?.count) || 0,

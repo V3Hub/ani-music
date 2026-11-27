@@ -69,9 +69,22 @@
             管理员操作
           </h2>
           <p class="self-tip">
-            封禁后该用户将无法登录，解封请到用户管理
+            {{ isBanned ? '该用户当前处于封禁状态' : '封禁后该用户将无法登录' }}
           </p>
-          <button type="button" class="danger-btn" @click="banVisible = true">
+          <button
+            v-if="isBanned"
+            type="button"
+            class="danger-btn"
+            @click="onUnban"
+          >
+            解封该用户
+          </button>
+          <button
+            v-else
+            type="button"
+            class="danger-btn"
+            @click="banVisible = true"
+          >
             封禁该用户
           </button>
         </section>
@@ -118,7 +131,7 @@
 
 <script setup lang="ts">
 import type { PublicUserProfile } from '@/api/user'
-import { banUser } from '@/api/admin-user'
+import { banUser, unbanUser } from '@/api/admin-user'
 import { getPublicUserProfile } from '@/api/user'
 import ImageViewer from '@/components/common/ImageViewer.vue'
 import VipBadge from '@/components/common/VipBadge.vue'
@@ -126,7 +139,7 @@ import UserMessageSheet from '@/components/user/UserMessageSheet.vue'
 import { useUserProfileStore } from '@/stores/userProfile'
 import { resolveAvatarOrDefault } from '@/utils/avatar'
 import { resolveDisplayName } from '@/utils/user-token'
-import { showToast } from 'vant'
+import { showConfirmDialog, showToast } from 'vant'
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -140,6 +153,8 @@ const avatarPreviewVisible = ref(false)
 const messageVisible = ref(false)
 
 const userId = computed(() => String(route.params.id ?? ''))
+/** 该用户是否处于封禁状态 */
+const isBanned = computed(() => profile.value?.status === 'banned')
 const name = computed(() => resolveDisplayName({
   nickname: profile.value?.nickname,
   userId: profile.value?.id,
@@ -202,10 +217,27 @@ async function onBanConfirm(action: string) {
     await banUser(profile.value.id, reason.trim(), days)
     showToast(days > 0 ? `已封禁 ${days} 天` : '已永久封禁')
     banForm.value = { reason: '', days: 0 }
+    load()
     return true
   } catch {
     return false
   }
+}
+
+/** 解除封禁 */
+async function onUnban() {
+  if (!profile.value)
+    return
+  try {
+    await showConfirmDialog({ title: '解封用户', message: '确定解除该用户的封禁吗？' })
+  } catch {
+    return
+  }
+  try {
+    await unbanUser(profile.value.id)
+    showToast('已解封')
+    load()
+  } catch { /* request 已 toast */ }
 }
 
 watch(userId, () => {
