@@ -39,7 +39,7 @@ export async function handleAdminListUsers(request, env) {
   const { results } = await env.DB.prepare(
     `SELECT id, username, nickname, avatar_url, is_admin, vip_level,
             COALESCE(status, 'active') AS status,
-            ban_reason, ban_time, ban_until, create_time
+            ban_reason, ban_time, ban_until, created_at AS create_time
      FROM users WHERE ${whereSql}
      ORDER BY id DESC LIMIT ? OFFSET ?`,
   ).bind(...params, pageSize, (page - 1) * pageSize).all()

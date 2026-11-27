@@ -15,6 +15,7 @@ export interface AdminUserItem {
   ban_time: string
   /** 封禁截止时间（UTC），空表示永久 */
   ban_until: string
+  /** 注册时间（users.created_at） */
   create_time: string
   last_login_ip: string
 }
