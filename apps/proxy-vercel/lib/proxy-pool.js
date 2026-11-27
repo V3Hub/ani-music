@@ -181,7 +181,7 @@ async function fetchList(code) {
     throw new Error(`拉取 ${code} 列表失败: HTTP ${resp.status}`)
   const data = await resp.json()
   if (!Array.isArray(data))
-    throw new Error(`拉取 ${code} 列表失败: 响应格式异常`)
+    throw new TypeError(`拉取 ${code} 列表失败: 响应格式异常`)
   return data
     .filter(p => p
       // 只要 http 代理：https 代理在 undici 下对 IP 主机做 TLS SNI 会抛
