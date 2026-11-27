@@ -1,11 +1,12 @@
 // proxifly/free-proxy-list CN HTTP 代理池
 //
-// 设计要点：Vercel 是无状态 Serverless，实例随时冷启动 / 扩容，进程内缓存并不可靠。
-// 因此不在请求路径上做「全量探测」——175 个代理跑一遍会让冷启动接近一分钟，调用方必然超时。
-// 这里改成「按目标实时竞速」：
-//   1. 拉取 proxifly CN 代理原始列表（内存缓存 5 分钟，与上游更新频率一致）
-//   2. 打乱后小批量并发请求同一个目标，谁先成功用谁，其余立刻放弃
-//   3. 把胜出的代理按目标 host 缓存 30 分钟，后续同类请求优先复用它
+// 流程（只有一条路径，不做任何降级）：
+//   1. 拉取 proxifly CN 代理列表（jsdelivr 单源，内存缓存 5 分钟）
+//   2. 并发嗅探筛掉死代理，只有真正能出网的才进池
+//   3. 小批量并发打目标，谁先成功用谁，其余放弃
+//   4. 胜出代理按目标 host 缓存 30 分钟，后续同类请求优先复用
+//
+// 任何一步失败都直接抛错，由调用方记日志，不静默降级
 
 const { env: procEnv } = require('node:process')
 const { ProxyAgent, fetch: undiciFetch } = require('undici')
@@ -17,11 +18,11 @@ const WINNER_TTL_MS = 30 * 60 * 1000
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
 
-// 仅保留 CN 代理：实测多国混池会引入大量非中国出口，命中率反而下降
-const PROXY_COUNTRIES = ['CN']
+// 仅保留 CN 代理：多国混池会引入大量非中国出口，命中率反而下降
+const PROXY_COUNTRY = 'CN'
 
-/** 每个国家最多取多少候选，避免列表过大 */
-const PER_COUNTRY_CAP = 120
+/** 候选上限，避免列表过大拖慢嗅探 */
+const CANDIDATE_CAP = 120
 
 // 免费列表里混了不少「TCP 能连但不是 HTTP 代理」的端口（SSH / SOCKS / 数据库等），
 // 它们会一直挂到超时才失败，白占样本，直接剔除
@@ -45,7 +46,7 @@ const BOGUS_PORTS = new Set([
   27017,
 ])
 
-// raw.githubusercontent 优先（CDN 缓存约 5 分钟），jsdelivr 的 @main 缓存可达 12h，仅兜底
+// 仅使用 jsdelivr：raw.githubusercontent 在不同边缘节点会返回新旧不一的快照
 function listUrls(code) {
   // 只用 jsdelivr（国内可达性更好）；加 5 分钟粒度的版本参数，避开陈旧缓存。
   // 免费代理寿命极短，旧快照里基本都是死代理
@@ -67,7 +68,6 @@ const state = {
   raw: [],
   rawFetchedAt: 0,
   fetching: false,
-  lastError: '',
   attempts: 0,
   rotate: 0,
   winners: new Map(),
@@ -163,51 +163,39 @@ function firstSuccess(promises) {
   })
 }
 
-// 嗅探目标：默认百度首页（可用 env.PROBE_URL 覆盖）
-// 注意百度对代理 IP 有拦截，可能产生假阴性
+// 嗅探目标：默认腾讯首页（可用 env.PROBE_URL 覆盖）
 const PROBE_URL = procEnv.PROBE_URL || 'https://www.qq.com/'
 const PROBE_TIMEOUT_MS = 1500
 const PROBE_CONCURRENCY = 40
 /** 嗅探阶段最多占用多少毫秒，剩下的预算留给竞速 */
 const PROBE_BUDGET_MS = 5000
 
-/** 拉取单个国家的代理列表（多源容灾） */
-async function fetchCountry(code) {
-  let lastError = new Error(`${code} 拉取失败`)
-  for (const url of listUrls(code)) {
-    try {
-      const resp = await undiciFetch(url, {
-        headers: { 'User-Agent': UA },
-        signal: AbortSignal.timeout(8000),
-      })
-      if (!resp.ok) {
-        lastError = new Error(`HTTP ${resp.status}`)
-        continue
-      }
-      const data = await resp.json()
-      if (!Array.isArray(data)) {
-        lastError = new Error('响应不是数组')
-        continue
-      }
-      return data
-        .filter(p => p
-          // 只要 http 代理：https 代理在 undici 下对 IP 主机做 TLS SNI 会抛
-          // ERR_INVALID_ARG_VALUE，实测全部不可用，留着只会污染统计
-          && p.protocol === 'http'
-          && typeof p.ip === 'string'
-          && typeof p.port === 'number'
-          && p.port > 0
-          && p.port < 65536
-          && !BOGUS_PORTS.has(p.port))
-        .map(p => `${p.protocol}://${p.ip}:${p.port}`)
-    } catch (err) {
-      lastError = err
-    }
-  }
-  throw lastError
+/** 拉取代理列表（jsdelivr 单源），失败直接抛错 */
+async function fetchList(code) {
+  const [url] = listUrls(code)
+  const resp = await undiciFetch(url, {
+    headers: { 'User-Agent': UA },
+    signal: AbortSignal.timeout(8000),
+  })
+  if (!resp.ok)
+    throw new Error(`拉取 ${code} 列表失败: HTTP ${resp.status}`)
+  const data = await resp.json()
+  if (!Array.isArray(data))
+    throw new Error(`拉取 ${code} 列表失败: 响应格式异常`)
+  return data
+    .filter(p => p
+      // 只要 http 代理：https 代理在 undici 下对 IP 主机做 TLS SNI 会抛
+      // ERR_INVALID_ARG_VALUE，实测全部不可用
+      && p.protocol === 'http'
+      && typeof p.ip === 'string'
+      && typeof p.port === 'number'
+      && p.port > 0
+      && p.port < 65536
+      && !BOGUS_PORTS.has(p.port))
+    .map(p => `${p.protocol}://${p.ip}:${p.port}`)
 }
 
-/** 用单个代理嗅探百度，能拿到任意响应即视为可用 */
+/** 用单个代理嗅探目标站点，能拿到任意响应即视为可用 */
 async function probeOne(proxyUrl) {
   const agent = new ProxyAgent(proxyUrl)
   const controller = new AbortController()
@@ -228,7 +216,7 @@ async function probeOne(proxyUrl) {
   }
 }
 
-/** 并发嗅探，只返回能打通百度的代理；到 deadline 提前收工 */
+/** 并发嗅探，只返回能出网的代理；到 deadline 提前收工 */
 async function probeProxies(list, deadline) {
   const ok = []
   let cursor = 0
@@ -246,52 +234,23 @@ async function probeProxies(list, deadline) {
   return ok
 }
 
-/** 按国家优先级合并代理，并用百度嗅探，只有能通的才进池 */
+/** 拉取候选代理并嗅探，只返回真正能出网的代理；任一环节失败直接抛错 */
 async function buildList(deadline) {
-  const countries = PROXY_COUNTRIES
+  const candidates = shuffle([...new Set(await fetchList(PROXY_COUNTRY))]).slice(0, CANDIDATE_CAP)
+  if (candidates.length === 0)
+    throw new Error('候选代理为空')
 
-  const groups = await Promise.all(countries.map(code =>
-    fetchCountry(code)
-      .then(list => shuffle([...new Set(list)]).slice(0, PER_COUNTRY_CAP))
-      .catch((err) => {
-        console.warn(`[proxy-pool] ${code} 拉取失败: ${err.message}`)
-        return []
-      }),
-  ))
-
-  const seen = new Set()
-  const merged = []
-  for (const group of groups) {
-    for (const proxy of group) {
-      if (!seen.has(proxy)) {
-        seen.add(proxy)
-        merged.push(proxy)
-      }
-    }
-  }
-
-  if (merged.length === 0) {
-    console.warn('[proxy-pool] 未取到任何候选代理，沿用旧池')
-    return state.raw
-  }
-
-  // 先嗅探，只有能打通百度的才算可用代理进池
   const probeDeadline = Math.min(deadline || Infinity, Date.now() + PROBE_BUDGET_MS)
-  const verified = await probeProxies(merged, probeDeadline)
-  console.info(`[proxy-pool] 国家=${countries.join('/')} 候选=${merged.length} 嗅探通过=${verified.length}`)
+  const verified = await probeProxies(candidates, probeDeadline)
+  console.info(`[proxy-pool] 候选=${candidates.length} 嗅探通过=${verified.length}`)
 
-  if (verified.length === 0) {
-    // 百度会拦截代理 IP，嗅探全挂很可能是假阴性，
-    // 此时用未嗅探的候选继续竞速，而不是把池子清空导致直接报「列表为空」
-    console.warn('[proxy-pool] 嗅探无一通过，回退未嗅探候选')
-    return merged
-  }
+  if (verified.length === 0)
+    throw new Error(`嗅探全部失败（候选 ${candidates.length} 个）`)
 
-  // https 代理只占队首前 6 个：实测 https 条目大量不可用，全部前置会浪费整批样本
   return verified
 }
 
-/** 取原始列表；超过 5 分钟则刷新，刷新失败保留旧值 */
+/** 取代理池；超过 5 分钟或强制时重建，失败直接抛错 */
 async function getRawList(force = false, deadline) {
   const fresh = state.raw.length > 0 && Date.now() - state.rawFetchedAt < LIST_TTL_MS
   if (!force && fresh)
@@ -299,23 +258,19 @@ async function getRawList(force = false, deadline) {
   // 并发请求共享同一次拉取，避免冷启动时多个请求各拉一遍
   if (inflight)
     return inflight
+
   state.fetching = true
-  inflight = (async () => {
-    try {
-      const raw = await buildList(deadline)
+  inflight = buildList(deadline)
+    .then((raw) => {
       state.raw = raw
       state.rawFetchedAt = Date.now()
-      state.lastError = ''
       console.info(`[proxy-pool] 列表已更新 count=${raw.length}`)
-    } catch (err) {
-      state.lastError = err.message
-      console.error('[proxy-pool] 拉取代理列表失败:', err.message)
-    } finally {
+      return raw
+    })
+    .finally(() => {
       inflight = null
       state.fetching = false
-    }
-    return state.raw
-  })()
+    })
   return inflight
 }
 
@@ -362,11 +317,8 @@ async function raceProxies(target, options = {}) {
     state.winners.delete(host)
   }
 
-  // 2. 竞速：buildList 已按 https 优先 + 国家优先级排好；
-  //    每次请求把取样窗口向后轮转一批，避免 5 分钟内反复只试前 30 个
+  // 2. 竞速：每次请求把取样窗口向后轮转一批，避免 5 分钟内反复只试同一批
   const raw = await getRawList(false, deadline)
-  if (raw.length === 0)
-    throw new Error('代理列表为空')
   const slot = Math.max(1, Math.ceil(raw.length / batchSize))
   const offset = (state.rotate++ % slot) * batchSize
   const queue = raw.slice(offset).concat(raw.slice(0, offset))
@@ -414,7 +366,6 @@ function getCacheStats() {
     listCount: state.raw.length,
     listAgeMs: state.rawFetchedAt ? Date.now() - state.rawFetchedAt : null,
     fetching: state.fetching,
-    lastError: state.lastError,
     attempts: state.attempts,
     winners: state.winners.size,
   }
