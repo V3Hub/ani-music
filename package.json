@@ -15,6 +15,7 @@
     "preview": "pnpm --filter @ani-music/web preview",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
+    "prepare": "git config core.hooksPath .githooks || exit 0",
     "release": "node apps/web/scripts/release.mjs",
     "release:minor": "node apps/web/scripts/release.mjs minor",
     "release:major": "node apps/web/scripts/release.mjs major"

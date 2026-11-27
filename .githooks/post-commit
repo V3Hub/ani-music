@@ -1,0 +1,18 @@
+#!/usr/bin/env sh
+# post-commit：自动 bump 版本号 + 追加 changelog
+#
+# 生效方式：git config core.hooksPath .githooks
+# （根 package.json 的 prepare 脚本会在 pnpm install 时自动配置）
+#
+# 跳过本次：RELEASE=0 git commit -m "xxx"
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT" || exit 0
+
+if [ "${RELEASE:-}" = "0" ]; then
+  echo "  (跳过自动 release：RELEASE=0)"
+  exit 0
+fi
+
+# 脚本内部会自行判断 chore / merge / release commit 并跳过
+node apps/web/scripts/release.mjs --from-git-message --auto-commit || exit 0
