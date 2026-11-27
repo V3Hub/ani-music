@@ -164,10 +164,10 @@ function firstSuccess(promises) {
 // 嗅探目标：默认百度首页（可用 env.PROBE_URL 覆盖）
 // 注意百度对代理 IP 有拦截，可能产生假阴性
 const PROBE_URL = procEnv.PROBE_URL || 'https://www.qq.com/'
-const PROBE_TIMEOUT_MS = 2000
-const PROBE_CONCURRENCY = 25
+const PROBE_TIMEOUT_MS = 1500
+const PROBE_CONCURRENCY = 40
 /** 嗅探阶段最多占用多少毫秒，剩下的预算留给竞速 */
-const PROBE_BUDGET_MS = 10000
+const PROBE_BUDGET_MS = 5000
 
 /** 拉取单个国家的代理列表（多源容灾） */
 async function fetchCountry(code) {
