@@ -16,6 +16,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.1.13',
+    date: '2026-11-27',
+    items: [
+      { type: 'feat', text: '用户详情页支持管理员封禁与解封' },
+      { type: 'feat', text: '用户列表 id 改为 base64 展示并支持按 id 搜索' },
+      { type: 'fix', text: '用户管理列表查询改用 users.created_at' },
+    ],
+  },
+  {
     version: '0.1.12',
     date: '2026-11-26',
     items: [
