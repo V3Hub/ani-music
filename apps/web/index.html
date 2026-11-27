@@ -55,9 +55,11 @@
         --theme-background: #0a0b16;
       }
       /* ===== 关键：html/body 必须深色覆盖，否则 splash 未触及的安全区露白 ===== */
-      /* 描述文件（Web Clip）以独立模式打开时，顶部固定留白避开状态栏；手机浏览器不生效 */
+      /* 描述文件（Web Clip）以独立模式打开时，顶部留白避开状态栏；手机浏览器不生效 */
+      /* 用安全区高度而非固定 25px：刘海屏状态栏 47~59pt，写死会有一半内容被状态栏材质盖住发虚 */
       html.is-standalone #app {
-        padding: 25px 0 20px;
+        padding-top: env(safe-area-inset-top, 25px);
+        padding-bottom: 20px;
       }
       html,
       body {
