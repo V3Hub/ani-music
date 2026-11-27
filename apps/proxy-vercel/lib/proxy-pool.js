@@ -47,12 +47,10 @@ const BOGUS_PORTS = new Set([
 
 // raw.githubusercontent 优先（CDN 缓存约 5 分钟），jsdelivr 的 @main 缓存可达 12h，仅兜底
 function listUrls(code) {
-  // 加 5 分钟粒度的版本参数：raw/jsdelivr 的边缘缓存可能长期返回旧快照，
-  // 而免费代理寿命极短，旧快照里的基本都是死代理 ——
-  // 表现就是「嗅探通过=0、竞速全 timeout」，而换个实例拿到新快照又正常了
+  // 只用 jsdelivr（国内可达性更好）；加 5 分钟粒度的版本参数，避开陈旧缓存。
+  // 免费代理寿命极短，旧快照里基本都是死代理
   const bucket = Math.floor(Date.now() / (5 * 60 * 1000))
   return [
-    `https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/countries/${code}/data.json?v=${bucket}`,
     `https://cdn.jsdelivr.net/gh/proxifly/free-proxy-list@main/proxies/countries/${code}/data.json?v=${bucket}`,
   ]
 }
