@@ -20,16 +20,15 @@ export const CHANGELOG: ChangelogEntry[] = [
     date: '2026-11-27',
     items: [
       { type: 'feat', text: '用户详情页支持管理员封禁与解封' },
-      { type: 'feat', text: '用户列表 id 改为 base64 展示并支持按 id 搜索' },
-      { type: 'fix', text: '用户管理列表查询改用 users.created_at' },
+      { type: 'feat', text: '用户列表编号改为加密展示并支持按编号搜索' },
     ],
   },
   {
     version: '0.1.12',
     date: '2026-11-26',
     items: [
-      { type: 'feat', text: 'Vercel Serverless Function 通用反代：自动检测中国站点、并发探测代理可用性、2 小时缓存刷新' },
-      { type: 'feat', text: '歌词滚动改用 transform + Material standard 缓动，从底部柔和翻页到顶部' },
+      { type: 'feat', text: '通用反代服务：自动识别站点归属、并发筛选可用代理、定时刷新缓存' },
+      { type: 'feat', text: '歌词滚动改为缓动翻页，从底部柔和滑到顶部' },
     ],
   },
   {
@@ -43,7 +42,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: '0.1.10',
     date: '2026-11-20',
     items: [
-      { type: 'feat', text: '播放失败歌曲排序恢复、歌单拥有者手动排序与底部 Tab 切换动画' },
+      { type: 'feat', text: '播放失败歌曲排序恢复、歌单拥有者手动排序与底部标签切换动画' },
     ],
   },
   {
@@ -64,21 +63,21 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: '0.1.7',
     date: '2026-11-19',
     items: [
-      { type: 'other', text: 'fix: 描述文件独立打开时顶部留白' },
+      { type: 'other', text: '描述文件独立打开时顶部留白' },
     ],
   },
   {
     version: '0.1.6',
     date: '2026-11-19',
     items: [
-      { type: 'feat', text: '站内消息通知、用户主页留言与轻量版 App 安装' },
+      { type: 'feat', text: '站内消息通知、用户主页留言与轻量版应用安装' },
     ],
   },
   {
     version: '0.1.5',
     date: '2026-11-19',
     items: [
-      { type: 'fix', text: 'release 脚本 lint 注释清理' },
+      { type: 'fix', text: '发布脚本注释清理' },
     ],
   },
   {
@@ -88,8 +87,8 @@ export const CHANGELOG: ChangelogEntry[] = [
       { type: 'feat', text: '新增歌曲标签：用户可给歌曲打标签，听歌模式根据热门标签动态生成场景' },
       { type: 'feat', text: '管理员歌曲标签管理页：搜索、批量删除标签' },
       { type: 'feat', text: '账号详情支持修改密码、逐项编辑用户名/昵称/头像' },
-      { type: 'fix', text: '快速切歌时封面图与声音错位：错误自动切歌不再重排队列避免 Swiper 重建竞态' },
-      { type: 'fix', text: '管理员页面刷新时偶发提示无权限：onMounted 先拉取用户资料再判断权限' },
+      { type: 'fix', text: '快速切歌时封面图与声音错位：错误自动切歌不再重排队列，避免轮播重建竞态' },
+      { type: 'fix', text: '管理员页面刷新时偶发提示无权限：先拉取用户资料再判断权限' },
       { type: 'feat', text: '新增错误日志上报与管理员查看页' },
     ],
   },

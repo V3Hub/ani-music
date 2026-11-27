@@ -31,8 +31,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const WEB_ROOT = resolve(__dirname, '..')
 const REPO_ROOT = resolve(WEB_ROOT, '..', '..')
 const PKG_PATHS = [
-  resolve(REPO_ROOT, 'package.json'),         // 根 workspace
-  resolve(WEB_ROOT, 'package.json'),           // @ani-music/web
+  resolve(REPO_ROOT, 'package.json'), // 根 workspace
+  resolve(WEB_ROOT, 'package.json'), // @ani-music/web
 ]
 const CHANGELOG_PATH = resolve(WEB_ROOT, 'src/constants/changelog.ts')
 
@@ -154,6 +154,9 @@ if (fromGitMessage) {
     ? itemArgs.map(parseItem).filter(Boolean)
     : [{ type: 'other', text: '在此填写本次更新内容' }]
 }
+
+// 更新日志只保留纯中文条目：含拉丁字母的多为内部标识（字段名、英文框架名），不对外展示
+items = items.filter(item => !/[a-z]/i.test(item.text))
 
 if (!items.length) {
   console.log('  (无有效条目，跳过 bump)')
