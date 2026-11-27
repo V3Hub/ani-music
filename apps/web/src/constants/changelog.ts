@@ -16,6 +16,13 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.1.14',
+    date: '2026-11-27',
+    items: [
+      { type: 'fix', text: '独立窗口顶部留白改用状态栏安全区高度' },
+    ],
+  },
+  {
     version: '0.1.13',
     date: '2026-11-27',
     items: [
