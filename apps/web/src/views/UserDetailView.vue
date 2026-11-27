@@ -60,6 +60,21 @@
             </button>
           </template>
         </section>
+
+        <section
+          v-if="profileStore.isAdmin && !profile.mine"
+          class="message-card"
+        >
+          <h2 class="card-title">
+            管理员操作
+          </h2>
+          <p class="self-tip">
+            封禁后该用户将无法登录，解封请到用户管理
+          </p>
+          <button type="button" class="danger-btn" @click="banVisible = true">
+            封禁该用户
+          </button>
+        </section>
       </template>
 
       <p v-else class="error-tip">
@@ -69,22 +84,55 @@
 
     <UserMessageSheet v-model:visible="messageVisible" :target="messageTarget" />
     <ImageViewer v-model:visible="avatarPreviewVisible" :src="avatarSrc" />
+
+    <van-dialog
+      v-model:show="banVisible"
+      title="封禁用户"
+      show-cancel-button
+      :before-close="onBanConfirm"
+    >
+      <div class="ban-form">
+        <div class="dur-row">
+          <button
+            v-for="opt in banOptions"
+            :key="opt.days"
+            type="button"
+            class="dur-chip"
+            :class="{ active: banForm.days === opt.days }"
+            @click="banForm.days = opt.days"
+          >
+            {{ opt.label }}
+          </button>
+        </div>
+        <textarea
+          v-model="banForm.reason"
+          class="ban-reason-input"
+          rows="2"
+          maxlength="100"
+          placeholder="选填，让用户知道为什么被封"
+        />
+      </div>
+    </van-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import type { PublicUserProfile } from '@/api/user'
+import { banUser } from '@/api/admin-user'
 import { getPublicUserProfile } from '@/api/user'
 import ImageViewer from '@/components/common/ImageViewer.vue'
 import VipBadge from '@/components/common/VipBadge.vue'
 import UserMessageSheet from '@/components/user/UserMessageSheet.vue'
+import { useUserProfileStore } from '@/stores/userProfile'
 import { resolveAvatarOrDefault } from '@/utils/avatar'
 import { resolveDisplayName } from '@/utils/user-token'
+import { showToast } from 'vant'
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 const route = useRoute()
 const router = useRouter()
+const profileStore = useUserProfileStore()
 
 const profile = ref<PublicUserProfile | null>(null)
 const loading = ref(true)
@@ -133,6 +181,31 @@ function goBack() {
     return
   }
   router.replace('/')
+}
+
+/** 管理员封禁弹框 */
+const banVisible = ref(false)
+const banForm = ref({ reason: '', days: 0 })
+/** 封禁时长选项，days = 0 永久 */
+const banOptions = [
+  { label: '永久', days: 0 },
+  { label: '90 天', days: 90 },
+  { label: '30 天', days: 30 },
+  { label: '7 天', days: 7 },
+]
+
+async function onBanConfirm(action: string) {
+  if (action !== 'confirm' || !profile.value)
+    return true
+  try {
+    const { reason, days } = banForm.value
+    await banUser(profile.value.id, reason.trim(), days)
+    showToast(days > 0 ? `已封禁 ${days} 天` : '已永久封禁')
+    banForm.value = { reason: '', days: 0 }
+    return true
+  } catch {
+    return false
+  }
 }
 
 watch(userId, () => {
@@ -310,6 +383,61 @@ watch(userId, () => {
   font-family: inherit;
   font-size: 13px;
   cursor: pointer;
+}
+
+.danger-btn {
+  width: 100%;
+  height: 40px;
+  border: 1px solid rgba(255, 92, 124, 0.45);
+  border-radius: 12px;
+  background: rgba(255, 92, 124, 0.14);
+  color: #ff5c7c;
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.ban-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 2px;
+}
+
+.dur-row {
+  display: flex;
+  gap: 6px;
+}
+
+.dur-chip {
+  flex: 1;
+  padding: 6px 0;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 999px;
+  background: transparent;
+  color: #666;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.dur-chip.active {
+  border-color: #ff5c7c;
+  background: rgba(255, 92, 124, 0.12);
+  color: #ff5c7c;
+}
+
+.ban-reason-input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 10px;
+  background: transparent;
+  color: #333;
+  font-family: inherit;
+  font-size: 13px;
+  resize: none;
+  outline: none;
 }
 
 .error-tip {
